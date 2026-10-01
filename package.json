@@ -1,14 +1,14 @@
 {
   "name": "talk-desktop",
-  "version": "2.3.2",
+  "version": "2.3.2-custom.1",
   "private": true,
   "bugs": {
-    "url": "https://github.com/nextcloud/talk-desktop/issues",
-    "create": "https://github.com/nextcloud/talk-desktop/issues/new/choose"
+    "url": "https://github.com/Art-of-Technology/talk-desktop/issues",
+    "create": "https://github.com/Art-of-Technology/talk-desktop/issues/new"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/nextcloud/talk-desktop"
+    "url": "https://github.com/Art-of-Technology/talk-desktop"
   },
   "license": "AGPL-3.0-or-later",
   "author": {
