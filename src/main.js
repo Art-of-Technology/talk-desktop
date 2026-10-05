@@ -3,23 +3,26 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-const { app, ipcMain, desktopCapturer, systemPreferences, shell, session } = require('electron')
+const { app, ipcMain, desktopCapturer, systemPreferences, shell, session, dialog, autoUpdater, BrowserWindow, Notification } = require('electron')
 const { default: mri } = require('mri')
 const { spawn } = require('node:child_process')
 const path = require('node:path')
 const { setupMenu } = require('./app/app.menu.js')
+const { releaseTray, setupTray, cancelTrayQuit, prepareTrayQuit } = require('./app/app.tray.js')
 const { loadAppConfig, getAppConfig, setAppConfig } = require('./app/AppConfig.ts')
 const { appData } = require('./app/AppData.js')
 const { registerAppProtocolHandler } = require('./app/appProtocol.ts')
 const { verifyCertificate, promptCertificateTrust } = require('./app/certificate.service.ts')
 const { cli } = require('./app/cli.ts')
+const { DesktopUpdater } = require('./app/DesktopUpdater.js')
 const { openChromeWebRtcInternals } = require('./app/dev.utils.ts')
 const { triggerDownloadUrl } = require('./app/downloads.ts')
-const { setupReleaseNotificationScheduler, checkForUpdate } = require('./app/githubRelease.service.ts')
+const { setInternalNavigationTarget } = require('./app/externalLinkHandlers.ts')
 const { initLaunchAtStartupListener } = require('./app/launchAtStartup.config.ts')
 const { runMigrations } = require('./app/migration.service.ts')
 const { systemInfo, isMac, isWindows, isSameExecution, isSquirrel, relaunchApp } = require('./app/system.utils.ts')
 const { applyTheme } = require('./app/theme.config.ts')
+const { UpdateNotification } = require('./app/UpdateNotification.js')
 const { buildTitle, onReadyToShow } = require('./app/utils.ts')
 const { enableWebRequestInterceptor, disableWebRequestInterceptor } = require('./app/webRequestInterceptor.js')
 const { createAuthenticationWindow } = require('./authentication/authentication.window.js')
@@ -28,6 +31,7 @@ const { createCallboxWindow } = require('./callbox/callbox.window.ts')
 const { createHelpWindow } = require('./help/help.window.js')
 const { installVueDevtools } = require('./install-vue-devtools.js')
 const { BUILD_CONFIG } = require('./shared/build.config.ts')
+const { CallWindowManager } = require('./talk/CallWindowManager.js')
 const { createTalkWindow } = require('./talk/talk.window.js')
 const { createUpgradeWindow } = require('./upgrade/upgrade.window.ts')
 const { createWelcomeWindow } = require('./welcome/welcome.window.ts')
@@ -76,8 +80,6 @@ ipcMain.handle('app:getSystemL10n', () => ({
 }))
 ipcMain.handle('app:enableWebRequestInterceptor', (event, ...args) => enableWebRequestInterceptor(...args))
 ipcMain.handle('app:disableWebRequestInterceptor', (event, ...args) => disableWebRequestInterceptor(...args))
-ipcMain.handle('app:setBadgeCount', async (event, count) => app.setBadgeCount(count))
-ipcMain.on('app:relaunch', () => relaunchApp())
 ipcMain.handle('app:config:get', (event, key) => getAppConfig(key))
 ipcMain.handle('app:config:set', (event, key, value) => setAppConfig(key, value))
 ipcMain.on('app:grantUserGesturedPermission', (event, id) => {
@@ -86,7 +88,6 @@ ipcMain.on('app:grantUserGesturedPermission', (event, id) => {
 ipcMain.on('app:toggleDevTools', (event) => event.sender.toggleDevTools())
 ipcMain.handle('app:anything', () => { /* Put any code here to run it from UI */ })
 ipcMain.on('app:openChromeWebRtcInternals', () => openChromeWebRtcInternals())
-ipcMain.handle('app:update:check', async () => await checkForUpdate({ forceRequest: true }))
 ipcMain.handle('app:getDesktopCapturerSources', async () => {
 	// macOS 10.15 Catalina or higher requires consent for screen access
 	if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
@@ -132,13 +133,6 @@ app.whenReady().then(async () => {
 	initLaunchAtStartupListener()
 	registerAppProtocolHandler()
 
-	/**
-	 * Schedule check for a new version available to download from GitHub
-	 */
-	if (process.env.NODE_ENV === 'production' && !BUILD_CONFIG.isBranded) {
-		setupReleaseNotificationScheduler(24 * 60)
-	}
-
 	// Open in the background if it is explicitly set, or the app was open at login on macOS
 	const openInBackground = argv.background || app.getLoginItemSettings().wasOpenedAtLogin
 
@@ -162,6 +156,139 @@ app.whenReady().then(async () => {
 	 */
 	let mainWindow
 	let createMainWindow
+	const calls = new CallWindowManager({
+		getMain: () => mainWindow,
+		setMain: (window) => { mainWindow = window },
+		createMain: () => {
+			const window = createTalkWindow()
+			onReadyToShow(window, () => {
+				if (calls.owner) {
+					window.showInactive()
+				} else {
+					window.show()
+				}
+			})
+			return window
+		},
+		releaseTray,
+		restoreTray: setupTray,
+		showMain: focusMainWindow,
+		onPromote: (owner) => setInternalNavigationTarget(owner, () => mainWindow),
+		onLeaveTimeout: async (window) => {
+			const { response } = await dialog.showMessageBox(window, {
+				type: 'warning',
+				message: 'The server has not confirmed leaving the call.',
+				detail: 'Close the call window to stop your local microphone, camera and screen sharing. Other participants may see you in the call until the server detects the disconnection.',
+				buttons: ['Keep call open', 'Close call window'],
+				defaultId: 0,
+				cancelId: 0,
+			})
+			return response === 1
+		},
+		confirmLeave: async (window) => {
+			const { response } = await dialog.showMessageBox(window, {
+				type: 'question',
+				message: 'Leave the current call?',
+				detail: 'This will stop your microphone, camera and screen sharing.',
+				buttons: ['Stay in call', 'Leave call'],
+				defaultId: 0,
+				cancelId: 0,
+			})
+			return response === 1
+		},
+	})
+	const trustedCallSender = (event) => calls.trusted(event.sender) && event.senderFrame === event.sender.mainFrame
+	let logoutInProgress = false
+	let quitPending = false
+	let updateInstallPending = false
+	const updateNotification = new UpdateNotification({
+		Notification,
+		title: `${BUILD_CONFIG.applicationName} — Update available`,
+		canNotify: () => isWindows && createMainWindow === createTalkWindow && !calls.owner && !updateInstallPending && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused(),
+		onClick: () => {
+			if (mainWindow && !mainWindow.isDestroyed()) {
+				focusMainWindow()
+				mainWindow.webContents.send('desktop-update:show')
+			}
+		},
+	})
+	const desktopUpdater = new DesktopUpdater({
+		autoUpdater,
+		feedUrl: BUILD_CONFIG.updateFeedUrl,
+		supported: app.isPackaged && isWindows && isSquirrel,
+		onState: (state) => {
+			if (state.status === 'error' && updateInstallPending) {
+				updateInstallPending = false
+				cancelTrayQuit()
+			}
+			for (const window of BrowserWindow.getAllWindows()) {
+				window.webContents.send('desktop-update:state', state)
+			}
+			updateNotification.update(state)
+		},
+	})
+	ipcMain.handle('desktop-update:state', () => desktopUpdater.getState())
+	ipcMain.handle('desktop-update:check', (event) => trustedCallSender(event) ? desktopUpdater.check() : desktopUpdater.getState())
+	ipcMain.handle('desktop-update:install', async (event) => {
+		if (!trustedCallSender(event) || updateInstallPending) {
+			return false
+		}
+		if (calls.owner) {
+			await dialog.showMessageBox(mainWindow, { type: 'info', message: 'Finish your call before restarting to update.' })
+			return false
+		}
+		const started = desktopUpdater.install({
+			canInstall: () => !calls.owner && !logoutInProgress && !quitPending && !updateInstallPending,
+			prepareQuit: () => {
+				updateInstallPending = true
+				prepareTrayQuit()
+			},
+		})
+		if (!started) {
+			updateInstallPending = false
+			cancelTrayQuit()
+		}
+		return started
+	})
+	// Squirrel holds an installation lock briefly on first run.
+	const firstCheck = setTimeout(() => desktopUpdater.check(), process.argv.includes('--squirrel-firstrun') ? 60000 : 10000)
+	firstCheck.unref()
+	const updateTimer = setInterval(() => desktopUpdater.check(), 6 * 60 * 60 * 1000)
+	updateTimer.unref()
+	// Deferred notifications become eligible after a call ends or focus changes.
+	const noticeTimer = setInterval(() => updateNotification.update(desktopUpdater.getState()), 15000)
+	noticeTimer.unref()
+	ipcMain.handle('call:claim', (event, token) => !logoutInProgress && !quitPending && !updateInstallPending && createMainWindow === createTalkWindow && trustedCallSender(event) && calls.claim(event.sender, token))
+	ipcMain.handle('call:state', (event) => trustedCallSender(event) ? calls.state(event.sender) : { isCallWindow: false, hasCallWindow: false })
+	ipcMain.handle('call:release', (event) => trustedCallSender(event) && calls.release(event.sender))
+	ipcMain.handle('call:focus', (event) => trustedCallSender(event) && calls.focusCall())
+	ipcMain.on('app:relaunch', async () => {
+		if (await calls.endCall()) {
+			relaunchApp()
+		}
+	})
+	ipcMain.handle('app:setBadgeCount', (event, count) => {
+		if (event.sender === mainWindow?.webContents) {
+			app.setBadgeCount(count)
+		}
+	})
+	app.on('before-quit', (event) => {
+		if (!calls.owner) {
+			return
+		}
+		event.preventDefault()
+		cancelTrayQuit()
+		if (quitPending) {
+			return
+		}
+		quitPending = true
+		void calls.endCall().then((left) => {
+			quitPending = false
+			if (left) {
+				app.quit()
+			}
+		})
+	})
 
 	setupMenu()
 
@@ -193,7 +320,7 @@ app.whenReady().then(async () => {
 	/**
 	 * Instead of creating a new app instance - focus existence one
 	 */
-	app.on('second-instance', (event, argv, cwd) => {
+	app.on('second-instance', async (event, argv, cwd) => {
 		if (isSameExecution(argv[0], cwd)) {
 			focusMainWindow()
 			return
@@ -201,6 +328,9 @@ app.whenReady().then(async () => {
 
 		// The second instance is another installation
 		// Open the new instance and close the current one
+		if (!await calls.endCall()) {
+			return
+		}
 		app.releaseSingleInstanceLock()
 		try {
 			const newInstance = spawn(path.resolve(argv[0]), argv.slice(1), {
@@ -270,6 +400,9 @@ app.whenReady().then(async () => {
 
 	let macDockBounceId
 	ipcMain.on('talk:flashAppIcon', async (event, shouldFlash) => {
+		if (event.sender !== mainWindow?.webContents) {
+			return
+		}
 		// MacOS has no "flashing" but "bouncing" of the dock icon
 		if (isMac) {
 			// Stop previous bounce if any
@@ -292,6 +425,9 @@ app.whenReady().then(async () => {
 	ipcMain.handle('authentication:openLoginWebView', async (event, serverUrl, user) => openLoginWebView(mainWindow, serverUrl, user))
 
 	ipcMain.handle('authentication:login', async (event, newAppData) => {
+		if (!await calls.endCall()) {
+			return
+		}
 		appData.fromJSON(newAppData)
 		mainWindow.close()
 		mainWindow = createTalkWindow()
@@ -300,7 +436,17 @@ app.whenReady().then(async () => {
 	})
 
 	ipcMain.handle('authentication:logout', async () => {
-		if (createMainWindow === createTalkWindow) {
+		if (logoutInProgress || createMainWindow !== createTalkWindow) {
+			return
+		}
+		logoutInProgress = true
+		try {
+			if (!await calls.endCall()) {
+				return
+			}
+			if (createMainWindow !== createTalkWindow) {
+				return
+			}
 			appData.reset()
 			await mainWindow.webContents.session.clearStorageData()
 			app.setBadgeCount(0)
@@ -310,10 +456,15 @@ app.whenReady().then(async () => {
 
 			mainWindow.destroy()
 			mainWindow = authenticationWindow
+		} finally {
+			logoutInProgress = false
 		}
 	})
 
 	ipcMain.on('callbox:show', (event, callboxParams) => {
+		if (event.sender !== mainWindow?.webContents || calls.owner) {
+			return
+		}
 		createCallboxWindow(callboxParams)
 	})
 
@@ -321,7 +472,10 @@ app.whenReady().then(async () => {
 		createHelpWindow(mainWindow)
 	})
 
-	ipcMain.handle('upgrade:show', () => {
+	ipcMain.handle('upgrade:show', async () => {
+		if (!await calls.endCall()) {
+			return
+		}
 		const upgradeWindow = createUpgradeWindow()
 		createMainWindow = createUpgradeWindow
 
@@ -329,7 +483,10 @@ app.whenReady().then(async () => {
 		mainWindow = upgradeWindow
 	})
 
-	ipcMain.on('app:relaunchWindow', () => {
+	ipcMain.on('app:relaunchWindow', async () => {
+		if (!await calls.endCall()) {
+			return
+		}
 		isInWindowRelaunch = true
 		mainWindow.destroy()
 		mainWindow = createMainWindow()

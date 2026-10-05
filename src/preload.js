@@ -175,6 +175,53 @@ const TALK_DESKTOP = {
 	 */
 	focusTalk: () => ipcRenderer.invoke('talk:focus'),
 	/**
+	 * Reserve this renderer as the call window without reloading its media session.
+	 *
+	 * @param {string} token - Conversation token
+	 * @return {Promise<boolean>}
+	 */
+	claimCallWindow: (token) => ipcRenderer.invoke('call:claim', token),
+	/**
+	 * Get this window's current call ownership.
+	 *
+	 * @return {Promise<{ isCallWindow: boolean, hasCallWindow: boolean }>}
+	 */
+	getCallWindowState: () => ipcRenderer.invoke('call:state'),
+	/**
+	 * Restore the existing call window.
+	 *
+	 * @return {Promise<boolean>}
+	 */
+	focusCallWindow: () => ipcRenderer.invoke('call:focus'),
+	/**
+	 * Observe window ownership without exposing Electron's IPC event.
+	 *
+	 * @param {(state: { isCallWindow: boolean, hasCallWindow: boolean }) => void} callback - Receives the current window state
+	 * @return {() => void} Unsubscribe
+	 */
+	onCallWindowStateChange: (callback) => {
+		const handler = (event, state) => callback(state)
+		ipcRenderer.on('call:state-changed', handler)
+		return () => ipcRenderer.removeListener('call:state-changed', handler)
+	},
+	/**
+	 * Release ownership after Talk has confirmed that the call ended.
+	 *
+	 * @return {Promise<void>}
+	 */
+	releaseCallWindow: () => ipcRenderer.invoke('call:release'),
+	/**
+	 * Handle an explicit request to leave through Talk's normal call action.
+	 *
+	 * @param {() => void} callback - Leave handler
+	 * @return {() => void} Unsubscribe
+	 */
+	onCallLeaveRequested: (callback) => {
+		const handler = () => callback()
+		ipcRenderer.on('call:leave-requested', handler)
+		return () => ipcRenderer.removeListener('call:leave-requested', handler)
+	},
+	/**
 	 * Show the callbox window
 	 *
 	 * @param {object} params - Callbox parameters
@@ -187,21 +234,36 @@ const TALK_DESKTOP = {
 	 */
 	showHelp: () => ipcRenderer.invoke('help:show'),
 	/**
-	 * Check for a new release
+	 * Read this installation's update state.
 	 *
-	 * @return {Promise<import('./githubRelease.service.ts').ReleaseInfo | null>}
+	 * @return {Promise<object>}
 	 */
-	checkForUpdate: () => ipcRenderer.invoke('app:update:check'),
+	getDesktopUpdateState: () => ipcRenderer.invoke('desktop-update:state'),
+	/** Check and download updates from the configured private release feed. */
+	checkDesktopUpdate: () => ipcRenderer.invoke('desktop-update:check'),
+	/** Apply the downloaded update when the main process confirms it is safe. */
+	installDesktopUpdate: () => ipcRenderer.invoke('desktop-update:install'),
 	/**
-	 * Listen for new release availability event
+	 * Open the update notice after a native notification click.
 	 *
-	 * @param {(releaseInfo: import('./githubRelease.service.ts').ReleaseInfo) => void} callback - Callback
+	 * @param {() => void} callback - Callback
 	 * @return {() => void} unsubscribe
 	 */
-	onUpdateAvailable: (callback) => {
-		const handler = (event, releaseInfo) => callback(releaseInfo)
-		ipcRenderer.on('app:update:available', handler)
-		return () => ipcRenderer.removeListener('app:update:available', handler)
+	onDesktopUpdateShow: (callback) => {
+		const handler = () => callback()
+		ipcRenderer.on('desktop-update:show', handler)
+		return () => ipcRenderer.removeListener('desktop-update:show', handler)
+	},
+	/**
+	 * Listen for update progress.
+	 *
+	 * @param {(state: object) => void} callback - Callback
+	 * @return {() => void} unsubscribe
+	 */
+	onDesktopUpdateState: (callback) => {
+		const handler = (event, state) => callback(state)
+		ipcRenderer.on('desktop-update:state', handler)
+		return () => ipcRenderer.removeListener('desktop-update:state', handler)
 	},
 	/**
 	 * Show the upgrade window

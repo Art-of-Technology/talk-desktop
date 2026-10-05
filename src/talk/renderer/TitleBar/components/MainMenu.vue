@@ -5,11 +5,10 @@
 
 <script setup lang="ts">
 import type { Ref } from 'vue'
-import type { ReleaseInfo } from '../../../../app/githubRelease.service.ts'
 
 import { t } from '@nextcloud/l10n'
 import { generateUrl } from '@nextcloud/router'
-import { inject, onBeforeMount, onBeforeUnmount, ref } from 'vue'
+import { computed, inject, onBeforeMount, onBeforeUnmount, ref } from 'vue'
 import NcActionButton from '@nextcloud/vue/components/NcActionButton'
 import NcActionLink from '@nextcloud/vue/components/NcActionLink'
 import NcActions from '@nextcloud/vue/components/NcActions'
@@ -21,6 +20,7 @@ import IconInformationOutline from 'vue-material-design-icons/InformationOutline
 import IconMenu from 'vue-material-design-icons/Menu.vue'
 import IconReload from 'vue-material-design-icons/Reload.vue'
 import IconWeb from 'vue-material-design-icons/Web.vue'
+import UpdateNotice from '../../updates/UpdateNotice.vue'
 import UiDotBadge from './UiDotBadge.vue'
 import { BUILD_CONFIG } from '../../../../shared/build.config.ts'
 import { getCurrentTalkRoutePath } from '../../TalkWrapper/talk.service.ts'
@@ -34,17 +34,71 @@ const reload = () => window.location.reload()
 const openSettings = () => window.OCA.Talk.Settings.open()
 const openInWeb = () => window.open(generateUrl(getCurrentTalkRoutePath()), '_blank')
 
-const newRelease = ref<ReleaseInfo | null>(null)
-onBeforeMount(async () => {
-	newRelease.value = await window.TALK_DESKTOP.checkForUpdate()
+type UpdateState = Awaited<ReturnType<typeof window.TALK_DESKTOP.getDesktopUpdateState>>
+const updateState = ref<UpdateState>({ status: 'idle' })
+const updateFeedback = ref('')
+const updateNotice = ref<InstanceType<typeof UpdateNotice>>()
+let receivedUpdateEvent = false
+const updateDisabled = computed(() => ['checking', 'disabled', 'unsupported'].includes(updateState.value.status))
+const updateLabel = computed(() => {
+	switch (updateState.value.status) {
+		case 'checking': return t('talk_desktop', 'Checking for updates…')
+		case 'downloading': return t('talk_desktop', 'Downloading update…')
+		case 'ready': return t('talk_desktop', 'Restart to update')
+		case 'error': return t('talk_desktop', 'Retry update check')
+		case 'disabled': return t('talk_desktop', 'Updates not configured')
+		case 'unsupported': return t('talk_desktop', 'Manual updates only')
+		default: return t('talk_desktop', 'Check for updates')
+	}
 })
 
-const unsubscribeNewVersion = window.TALK_DESKTOP.onUpdateAvailable((release: ReleaseInfo) => {
-	newRelease.value = release
+onBeforeMount(async () => {
+	try {
+		const state = await window.TALK_DESKTOP.getDesktopUpdateState()
+		if (!receivedUpdateEvent) {
+			updateState.value = state
+		}
+	} catch {
+		updateFeedback.value = t('talk_desktop', 'Could not read update status. Please try again.')
+	}
 })
-onBeforeUnmount(() => {
-	unsubscribeNewVersion()
+const unsubscribeUpdateState = window.TALK_DESKTOP.onDesktopUpdateState((state: UpdateState) => {
+	receivedUpdateEvent = true
+	updateState.value = state
+	updateFeedback.value = ''
+	if (state.status === 'idle' && state.message) {
+		updateFeedback.value = t('talk_desktop', 'No update is available.')
+	}
+	if (state.status === 'error') {
+		updateFeedback.value = t('talk_desktop', 'The update could not be completed. Please try again later.')
+	}
 })
+onBeforeUnmount(unsubscribeUpdateState)
+const unsubscribeUpdateShow = window.TALK_DESKTOP.onDesktopUpdateShow(() => updateNotice.value?.open())
+onBeforeUnmount(unsubscribeUpdateShow)
+
+/**
+ * Check for a fork release or restart to apply a downloaded update.
+ */
+async function update() {
+	updateFeedback.value = ''
+	try {
+		if (['ready', 'downloading'].includes(updateState.value.status)) {
+			if (!updateNotice.value?.open()) {
+				updateFeedback.value = t('talk_desktop', 'Finish your call before opening the update dialog.')
+			}
+		} else {
+			updateState.value = await window.TALK_DESKTOP.checkDesktopUpdate()
+			if (updateState.value.status === 'idle') {
+				updateFeedback.value = t('talk_desktop', 'No update is available.')
+			} else if (updateState.value.status === 'error') {
+				updateFeedback.value = t('talk_desktop', 'The update could not be completed. Please try again later.')
+			}
+		}
+	} catch {
+		updateFeedback.value = t('talk_desktop', 'The update could not be completed. Please try again later.')
+	}
+}
 </script>
 
 <template>
@@ -53,33 +107,21 @@ onBeforeUnmount(() => {
 		variant="tertiary-no-background"
 		container="body">
 		<template #icon>
-			<UiDotBadge insetInlineEnd="10%" :enabled="!!newRelease">
+			<UiDotBadge insetInlineEnd="10%" :enabled="updateState.status === 'ready'">
 				<IconMenu :size="20" fillColor="var(--color-background-plain-text)" />
 			</UiDotBadge>
 		</template>
 
-		<template v-if="newRelease">
-			<!-- Installer may not be available if the current installer type is not supported anymore in a new version -->
-			<!-- Fallback to the release page link -->
-			<NcActionLink
-				:href="newRelease.installer?.downloadUrl || newRelease.url"
-				:download="newRelease.installer?.filename || undefined"
-				target="_blank"
-				closeAfterClick>
-				<template #icon>
-					<UiDotBadge
-						insetBlockStart="32%"
-						insetInlineEnd="22%"
-						enabled
-						noOutline>
-						<IconCloudDownloadOutline :size="20" />
-					</UiDotBadge>
-				</template>
-				{{ t('talk_desktop', 'Update') }}
-			</NcActionLink>
-
-			<NcActionSeparator />
-		</template>
+		<NcActionButton :disabled="updateDisabled" @click="update">
+			<template #icon>
+				<IconCloudDownloadOutline :size="20" />
+			</template>
+			{{ updateLabel }}
+		</NcActionButton>
+		<NcActionButton v-if="updateFeedback" disabled>
+			{{ updateFeedback }}
+		</NcActionButton>
+		<NcActionSeparator />
 
 		<template v-if="isTalkInitialized">
 			<NcActionButton closeAfterClick @click="openInWeb">
@@ -124,4 +166,5 @@ onBeforeUnmount(() => {
 			{{ t('talk_desktop', 'About') }}
 		</NcActionButton>
 	</NcActions>
+	<UpdateNotice ref="updateNotice" :state="updateState" @retry="update" />
 </template>
