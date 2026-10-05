@@ -109,6 +109,11 @@ const webpackRendererConfig = {
 
 	module: {
 		rules: [
+			{
+				test: (resource) => path.resolve(resource) === path.join(TALK_PATH, 'src/utils/webrtc/index.js'),
+				enforce: 'pre',
+				loader: path.resolve(__dirname, 'src/talk/renderer/CallWindow/idempotentLeave.loader.cjs'),
+			},
 			// @nextcloud/webpack-vue-config default rules
 			{
 				test: /\.vue$/,
@@ -205,6 +210,28 @@ const webpackRendererConfig = {
 	},
 
 	plugins: [
+		// Patch only upstream import sites; alias imports in wrappers keep the original.
+		new webpack.NormalModuleReplacementPlugin(/^\.\/participantsStore\.js$/, (resource) => {
+			if (path.resolve(resource.context) === path.join(TALK_PATH, 'src/store')) {
+				resource.request = path.resolve(__dirname, 'src/talk/renderer/CallWindow/participantsStore.js')
+			}
+		}),
+		new webpack.NormalModuleReplacementPlugin(/^\.\.\/services\/callsService\.ts$/, (resource) => {
+			if (path.resolve(resource.context) === path.join(TALK_PATH, 'src/store')) {
+				resource.request = path.resolve(__dirname, 'src/talk/renderer/CallWindow/callsService.js')
+			}
+		}),
+		new webpack.NormalModuleReplacementPlugin(/(?:^|\/)CallButton\.vue$/, (resource) => {
+			if (path.resolve(resource.context).startsWith(path.join(TALK_PATH, 'src') + path.sep)) {
+				resource.request = path.resolve(__dirname, 'src/talk/renderer/CallWindow/CallButton.js')
+			}
+		}),
+		// Extend the settings view without modifying the pinned Talk checkout.
+		new webpack.NormalModuleReplacementPlugin(/^\.\/BasicInfo\.vue$/, (resource) => {
+			if (path.resolve(resource.context) === path.join(TALK_PATH, 'src/components/ConversationSettings')) {
+				resource.request = path.resolve(__dirname, 'src/talk/renderer/ConversationSettings/BasicInfoWithIdentifier.vue')
+			}
+		}),
 		new VueLoaderPlugin(),
 
 		// Make sure we auto-inject node polyfills on demand

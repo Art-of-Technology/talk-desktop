@@ -4,11 +4,13 @@
   -->
 
 <script setup lang="ts">
+import NcButton from '@nextcloud/vue/components/NcButton'
 import DevMenu from './components/DevMenu.vue'
 import MainMenu from './components/MainMenu.vue'
 import UserMenu from './components/UserMenu.vue'
 import { BUILD_CONFIG } from '../../../shared/build.config.ts'
 import { useDevMode } from '../../../shared/useDevMode.ts'
+import { callWindowState } from '../CallWindow/callWindowState.ts'
 import { useAppConfigStore } from '../Settings/appConfig.store.ts'
 import { useHeartbeat } from '../UserStatus/useHeartbeat.ts'
 import { useUserStatusStore } from '../UserStatus/userStatus.store.ts'
@@ -24,6 +26,8 @@ const OS = window.systemInfo
 const applicationName = BUILD_CONFIG.applicationName
 
 const { isDevMode } = useDevMode()
+const openChats = () => window.TALK_DESKTOP.focusTalk()
+const returnToCall = () => window.TALK_DESKTOP.focusCallWindow()
 </script>
 
 <template>
@@ -41,15 +45,22 @@ const { isDevMode } = useDevMode()
 
 			<div class="spacer" />
 
+			<NcButton v-if="callWindowState.isCallWindow" variant="tertiary" @click="openChats">
+				Open chats
+			</NcButton>
+			<NcButton v-else-if="callWindowState.hasCallWindow" variant="tertiary" @click="returnToCall">
+				Return to call
+			</NcButton>
+
 			<div v-if="isDevMode" class="title-bar__item" data-theme-dark>
 				<DevMenu />
 			</div>
 
-			<div class="title-bar__item title-bar__main-menu-container" data-theme-dark>
+			<div v-if="!callWindowState.isCallWindow" class="title-bar__item title-bar__main-menu-container" data-theme-dark>
 				<MainMenu />
 			</div>
 
-			<div class="title-bar__item">
+			<div v-if="!callWindowState.isCallWindow" class="title-bar__item">
 				<UserMenu />
 			</div>
 		</div>
