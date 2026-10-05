@@ -7,9 +7,10 @@ const {
 	contextBridge,
 	ipcRenderer,
 } = require('electron')
-const { license, bugs, repository } = require('../package.json')
+const { version, license, bugs, repository } = require('../package.json')
 
 const packageInfo = {
+	version,
 	license,
 	bugs,
 	repository: repository.url,
