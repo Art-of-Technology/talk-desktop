@@ -1,5 +1,8 @@
 # Desktop fork review context
 
+<!-- SPDX-FileCopyrightText: 2026 Fork contributors -->
+<!-- SPDX-License-Identifier: MIT -->
+
 ## Identity and pins
 
 - Fork: `Art-of-Technology/talk-desktop`; desktop upstream: `nextcloud/talk-desktop`.
