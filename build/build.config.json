@@ -10,6 +10,7 @@
 	"primaryColor": "#00679e",
 	"backgroundColor": "#00679e",
 	"windowsExe": true,
+	"updateFeedUrl": null,
 	"windowsMsi": true,
 	"macosDmg": true,
 	"linuxFlatpak": true,

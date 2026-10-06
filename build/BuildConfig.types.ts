@@ -90,6 +90,13 @@ export type BuildConfigFile = {
 	 ****************/
 
 	/**
+	 * Optional HTTPS Squirrel.Windows update feed, supplied in ignored build config.
+	 * Null disables update checks; there is no upstream fallback.
+	 * Default: null
+	 */
+	updateFeedUrl: string | null
+
+	/**
 	 * Windows one-click single-user installer via Squirrel.Windows.
 	 * Default: true
 	 */

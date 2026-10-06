@@ -16,9 +16,11 @@ const { BUILD_CONFIG } = require('../shared/build.config.ts')
 const { getBrowserWindowIcon } = require('../shared/icons.utils.js')
 
 /**
+ * @param {object} [options] Window creation options
+ * @param {boolean} [options.persistWindowState] Persist the initial primary window only
  * @return {import('electron').BrowserWindow}
  */
-function createTalkWindow() {
+function createTalkWindow({ persistWindowState = true } = {}) {
 	const zoomFactor = getAppConfig('zoomFactor')
 
 	const talkWindowOptions = {
@@ -53,8 +55,8 @@ function createTalkWindow() {
 			width: 1400,
 			height: 900,
 		}),
-		name: 'talk-primary',
-		windowStatePersistence: true,
+		name: persistWindowState ? 'talk-primary' : undefined,
+		windowStatePersistence: persistWindowState,
 		show: false,
 	})
 
@@ -71,7 +73,6 @@ function createTalkWindow() {
 			width: 800,
 			height: 600,
 		}),
-		name: 'talk-secondary',
 		windowStatePersistence: false,
 	})
 

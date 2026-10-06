@@ -18,6 +18,18 @@ import { isExternalUrl } from './utils.ts'
 
 const talkPathRe = new RegExp('^/apps/spreed(?:/(?:not-found|forbidden|duplicate-session))?|/call/[^/]+$')
 
+const internalNavigationTargets = new WeakMap<BrowserWindow, () => BrowserWindow>()
+
+/**
+ * Redirect app links from a retained call renderer into the main chat window.
+ *
+ * @param source - Call window
+ * @param target - Resolve the current main chat window
+ */
+export function setInternalNavigationTarget(source: BrowserWindow, target: () => BrowserWindow) {
+	internalNavigationTargets.set(source, target)
+}
+
 /**
  * Try to extract Talk route from the link
  *
@@ -50,7 +62,7 @@ function tryExtractTalkRoute(link: string) {
  * @param browserWindowOptions - options for new BrowserWindow, usually based on parent options
  */
 export function applyExternalLinkHandler(browserWindow: BrowserWindow, browserWindowOptions: Partial<BrowserWindowConstructorOptions> = {}) {
-	browserWindow.webContents.on('will-navigate', willNavigateExternalLinkHandler)
+	browserWindow.webContents.on('will-navigate', (event) => willNavigateExternalLinkHandler(event, browserWindow))
 	browserWindow.webContents.setWindowOpenHandler((details) => windowOpenExternalLinkHandler(details, browserWindowOptions))
 }
 
@@ -78,8 +90,9 @@ function windowOpenExternalLinkHandler(details: HandlerDetails, browserWindowOpt
  * Open external link in the default OS handler (i.e. Web-Browser) on navigate
  *
  * @param event - Will Navigate Electron Event
+ * @param source - Window initiating navigation
  */
-async function willNavigateExternalLinkHandler(event: Event<WebContentsWillNavigateEventParams>) {
+async function willNavigateExternalLinkHandler(event: Event<WebContentsWillNavigateEventParams>, source: BrowserWindow) {
 	const { url, initiator: webFrameMain } = event
 
 	// Internal navigation - do nothing
@@ -95,9 +108,19 @@ async function willNavigateExternalLinkHandler(event: Event<WebContentsWillNavig
 
 	const talkRoute = tryExtractTalkRoute(url)
 	if (talkRoute && webFrameMain) {
+		const target = internalNavigationTargets.get(source)?.()
+		if (target && target !== source && !target.isDestroyed()) {
+			if (target.isMinimized()) {
+				target.restore()
+			}
+			target.show()
+			// Change only the chat router. Reloading the source would end its call.
+			await target.webContents.executeJavaScript(`window.location.hash = ${JSON.stringify('#' + talkRoute)}`)
+			return
+		}
 		// Talk route is about to open - navigate in app internally instead
 		// TODO: is it better to use browserWindow API here?
-		await webFrameMain.executeJavaScript(`window.location.hash = '#${talkRoute}'`)
+		await webFrameMain.executeJavaScript(`window.location.hash = ${JSON.stringify('#' + talkRoute)}`)
 		webFrameMain.reload()
 		return
 	}

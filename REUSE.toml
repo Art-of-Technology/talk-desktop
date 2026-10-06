@@ -49,7 +49,7 @@ SPDX-FileCopyrightText = "Evan You <https://github.com/vuejs/devtools/blob/main/
 SPDX-License-Identifier = "MIT"
 
 [[annotations]]
-path = ["sounds/notification.ogg", "sounds/talk.ogg"]
+path = ["sounds/talk.ogg"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "2017 Feandesign https://soundcloud.com/feandesign"
 SPDX-License-Identifier = "CC0-1.0"

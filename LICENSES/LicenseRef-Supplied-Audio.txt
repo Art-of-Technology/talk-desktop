@@ -1,0 +1,2 @@
+User-supplied notification audio, supplied for inclusion in the internal desktop client.
+This file is not the upstream Feandesign CC0 recording. No additional third-party redistribution rights are asserted by this notice.
