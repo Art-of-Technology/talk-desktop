@@ -1,0 +1,594 @@
+/**
+ * SPDX-FileCopyrightText: 2022 Nextcloud GmbH and Nextcloud contributors
+ * SPDX-License-Identifier: AGPL-3.0-or-later
+ */
+
+const { app, ipcMain, desktopCapturer, systemPreferences, shell, session, dialog, autoUpdater, BrowserWindow, Notification } = require('electron')
+const { default: mri } = require('mri')
+const { spawn } = require('node:child_process')
+const path = require('node:path')
+const { setupMenu } = require('./app/app.menu.js')
+const { releaseTray, setupTray, cancelTrayQuit, prepareTrayQuit } = require('./app/app.tray.js')
+const { loadAppConfig, getAppConfig, setAppConfig } = require('./app/AppConfig.ts')
+const { appData } = require('./app/AppData.js')
+const { registerAppProtocolHandler } = require('./app/appProtocol.ts')
+const { verifyCertificate, promptCertificateTrust } = require('./app/certificate.service.ts')
+const { cli } = require('./app/cli.ts')
+const { createReleaseStorage, createManifestFetcher } = require('./app/DesktopReleaseIO.js')
+const { DesktopUpdater } = require('./app/DesktopUpdater.js')
+const { openChromeWebRtcInternals } = require('./app/dev.utils.ts')
+const { triggerDownloadUrl } = require('./app/downloads.ts')
+const { setInternalNavigationTarget } = require('./app/externalLinkHandlers.ts')
+const { initLaunchAtStartupListener } = require('./app/launchAtStartup.config.ts')
+const { createMandatoryShutdown } = require('./app/MandatoryUpdateShutdown.js')
+const { runMigrations } = require('./app/migration.service.ts')
+const { isSquirrelMaintenance } = require('./app/squirrelMaintenance.js')
+const { systemInfo, isMac, isWindows, isSameExecution, isSquirrel, relaunchApp } = require('./app/system.utils.ts')
+const { applyTheme } = require('./app/theme.config.ts')
+const { UpdateNotification } = require('./app/UpdateNotification.js')
+const { buildTitle, onReadyToShow } = require('./app/utils.ts')
+const { enableWebRequestInterceptor, disableWebRequestInterceptor } = require('./app/webRequestInterceptor.js')
+const { createAuthenticationWindow } = require('./authentication/authentication.window.ts')
+const { openLoginWebView } = require('./authentication/loginFlowV1.window.ts')
+const { createCallboxWindow } = require('./callbox/callbox.window.ts')
+const { createHelpWindow } = require('./help/help.window.js')
+const { installVueDevtools } = require('./install-vue-devtools.js')
+const { BUILD_CONFIG } = require('./shared/build.config.ts')
+const { CallWindowManager } = require('./talk/CallWindowManager.js')
+const { createTalkWindow } = require('./talk/talk.window.js')
+const { createUpgradeWindow } = require('./upgrade/upgrade.window.ts')
+const { createWelcomeWindow } = require('./welcome/welcome.window.ts')
+
+const argv = mri(process.argv.slice(app.isPackaged ? 1 : 2))
+
+/**
+ * On production use executable name as application name to allow several independent application instances.
+ * On development use "Nextcloud Talk (dev)" instead of the default "electron".
+ */
+const APP_NAME = process.env.NODE_ENV !== 'development' ? path.parse(app.getPath('exe')).name : 'Nextcloud Talk (dev)'
+app.setName(APP_NAME)
+app.setPath('userData', path.join(app.getPath('appData'), app.getName()))
+if (isWindows && process.env.NODE_ENV === 'production') {
+	if (isSquirrel) {
+		// Squirrel.Windows sets the AppUserModelId in the following way
+		app.setAppUserModelId(`com.squirrel.${BUILD_CONFIG.applicationNameSanitized}.${BUILD_CONFIG.applicationNameSanitized}`)
+	} else {
+		// MSI installer - normal AppID
+		app.setAppUserModelId(BUILD_CONFIG.winAppId)
+	}
+}
+
+/**
+ * Only one instance is allowed at the same time
+ */
+if (!app.requestSingleInstanceLock()) {
+	console.log('Another instance of the app is already running')
+	app.quit()
+}
+
+ipcMain.on('app:quit', () => app.quit())
+ipcMain.handle('app:getSystemInfo', () => systemInfo)
+ipcMain.handle('app:buildTitle', (event, title) => buildTitle(title))
+ipcMain.handle('app:getSystemL10n', () => ({
+	locale: app.getLocale().replace('-', '_') ?? 'en',
+	// Note: Linux may have C (POSIX) locale, which results in an empty preferred languages list
+	language: app.getPreferredSystemLanguages()[0]?.replace('-', '_') ?? 'en_US',
+}))
+ipcMain.handle('app:enableWebRequestInterceptor', (event, ...args) => enableWebRequestInterceptor(...args))
+ipcMain.handle('app:disableWebRequestInterceptor', (event, ...args) => disableWebRequestInterceptor(...args))
+ipcMain.handle('app:config:get', (event, key) => getAppConfig(key))
+ipcMain.handle('app:config:set', (event, key, value) => setAppConfig(key, value))
+ipcMain.on('app:grantUserGesturedPermission', (event, id) => {
+	return event.sender.executeJavaScript(`document.getElementById('${id}')?.click()`, true)
+})
+ipcMain.on('app:toggleDevTools', (event) => event.sender.toggleDevTools())
+ipcMain.handle('app:anything', () => { /* Put any code here to run it from UI */ })
+ipcMain.on('app:openChromeWebRtcInternals', () => openChromeWebRtcInternals())
+ipcMain.handle('app:getDesktopCapturerSources', async () => {
+	// macOS 10.15 Catalina or higher requires consent for screen access
+	if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+		// Open System Preferences to allow screen recording
+		await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
+		// We cannot detect that the user has granted access, so return no sources
+		// The user will have to try again after granting access
+		return null
+	}
+
+	const thumbnailWidth = 800
+
+	const sources = await desktopCapturer.getSources({
+		types: ['screen', 'window'],
+		fetchWindowIcons: true,
+		thumbnailSize: {
+			width: thumbnailWidth,
+			height: thumbnailWidth * 9 / 16,
+		},
+	})
+
+	return sources.map((source) => ({
+		id: source.id,
+		name: source.name,
+		icon: source.appIcon && !source.appIcon.isEmpty() ? source.appIcon.toDataURL() : null,
+		thumbnail: source.thumbnail && !source.thumbnail.isEmpty() ? source.thumbnail.toDataURL() : null,
+	}))
+})
+
+/**
+ * Whether the window is being relaunched.
+ * At this moment there are no active windows, but the application should not quit yet.
+ */
+let isInWindowRelaunch = false
+
+app.whenReady().then(async () => {
+	await loadAppConfig()
+	await runMigrations()
+
+	await cli(argv)
+
+	applyTheme()
+	initLaunchAtStartupListener()
+	registerAppProtocolHandler()
+
+	// Open in the background if it is explicitly set, or the app was open at login on macOS
+	const openInBackground = argv.background || app.getLoginItemSettings().wasOpenedAtLogin
+
+	try {
+		await installVueDevtools()
+	} catch (error) {
+		console.log('Unable to install Vue Devtools')
+		console.error(error)
+	}
+
+	if (process.env.NODE_ENV === 'development') {
+		console.log()
+		console.log('Nextcloud Talk is running via development server')
+		console.log('Hint: type "rs" to restart app without restarting the build')
+		console.log()
+	}
+
+	// TODO: add windows manager
+	/**
+	 * @type {import('electron').BrowserWindow}
+	 */
+	let mainWindow
+	let createMainWindow
+	const calls = new CallWindowManager({
+		getMain: () => mainWindow,
+		setMain: (window) => { mainWindow = window },
+		createMain: () => {
+			// The promoted renderer still owns Electron's unique primary name.
+			const window = createTalkWindow({ persistWindowState: false })
+			onReadyToShow(window, () => {
+				if (calls.owner) {
+					window.showInactive()
+				} else {
+					window.show()
+				}
+			})
+			return window
+		},
+		releaseTray,
+		restoreTray: setupTray,
+		showMain: focusMainWindow,
+		onPromote: (owner) => setInternalNavigationTarget(owner, () => mainWindow),
+		onLeaveTimeout: async (window) => {
+			const { response } = await dialog.showMessageBox(window, {
+				type: 'warning',
+				message: 'The server has not confirmed leaving the call.',
+				detail: 'Close the call window to stop your local microphone, camera and screen sharing. Other participants may see you in the call until the server detects the disconnection.',
+				buttons: ['Keep call open', 'Close call window'],
+				defaultId: 0,
+				cancelId: 0,
+			})
+			return response === 1
+		},
+		confirmLeave: async (window) => {
+			const { response } = await dialog.showMessageBox(window, {
+				type: 'question',
+				message: 'Leave the current call?',
+				detail: 'This will stop your microphone, camera and screen sharing.',
+				buttons: ['Stay in call', 'Leave call'],
+				defaultId: 0,
+				cancelId: 0,
+			})
+			return response === 1
+		},
+	})
+	const trustedCallSender = (event) => calls.trusted(event.sender) && event.senderFrame === event.sender.mainFrame
+	let logoutInProgress = false
+	let quitPending = false
+	let updateInstallPending = false
+	let mandatoryClosing = false
+	let expiredDeadlineAtLaunch
+	let requiredNoticeFocused = false
+	const trustedUpdateSender = (event) => event.sender === mainWindow?.webContents && event.senderFrame === event.sender.mainFrame
+	const closeForMandatoryUpdate = createMandatoryShutdown({
+		app,
+		getWindows: () => BrowserWindow.getAllWindows(),
+		prepareQuit: prepareTrayQuit,
+		markQuitting: () => {
+			mandatoryClosing = true
+			quitPending = true
+		},
+	})
+	const updateNotification = new UpdateNotification({
+		Notification,
+		title: `${BUILD_CONFIG.applicationName} — Update available`,
+		canNotify: () => isWindows && createMainWindow === createTalkWindow && !calls.owner && !updateInstallPending && mainWindow && !mainWindow.isDestroyed() && !mainWindow.isFocused(),
+		onClick: () => {
+			if (mainWindow && !mainWindow.isDestroyed()) {
+				focusMainWindow()
+				mainWindow.webContents.send('desktop-update:show')
+			}
+		},
+	})
+	const desktopUpdater = new DesktopUpdater({
+		autoUpdater,
+		feedUrl: BUILD_CONFIG.updateFeedUrl,
+		supported: app.isPackaged && isWindows && isSquirrel,
+		installedVersion: app.getVersion(),
+		// Keep account cookies and the default-session auth interceptor out of the feed.
+		fetchManifest: createManifestFetcher((url, options) => session.fromPartition('desktop-update-metadata').fetch(url, options)),
+		storage: createReleaseStorage(app.getPath('userData')),
+		onMandatoryExpired: (state) => {
+			// After a forced close, reopen in the non-dismissible update-only UI.
+			// Repeatedly exiting at startup would prevent downloading the fix.
+			if (state.deadline !== expiredDeadlineAtLaunch) {
+				closeForMandatoryUpdate()
+			}
+		},
+		onState: (state) => {
+			if ((state.status === 'error' || state.message) && updateInstallPending) {
+				updateInstallPending = false
+				cancelTrayQuit()
+			}
+			for (const window of BrowserWindow.getAllWindows()) {
+				window.webContents.send('desktop-update:state', state)
+			}
+			updateNotification.update(state)
+			if (state.mandatory && !requiredNoticeFocused && mainWindow && !mainWindow.isDestroyed()) {
+				requiredNoticeFocused = true
+				focusMainWindow()
+				mainWindow.focus()
+				mainWindow.webContents.send('desktop-update:show')
+			} else if (!state.mandatory) {
+				requiredNoticeFocused = false
+				expiredDeadlineAtLaunch = undefined
+			}
+		},
+	})
+	if (desktopUpdater.getState().expired) {
+		expiredDeadlineAtLaunch = desktopUpdater.getState().deadline
+	}
+	ipcMain.handle('desktop-update:state', (event) => trustedUpdateSender(event) ? desktopUpdater.getState() : { status: 'disabled' })
+	ipcMain.handle('desktop-update:check', (event) => trustedUpdateSender(event) ? desktopUpdater.check() : { status: 'disabled' })
+	ipcMain.handle('desktop-update:download', (event) => trustedUpdateSender(event) && !mandatoryClosing ? desktopUpdater.download() : { status: 'disabled' })
+	ipcMain.handle('desktop-update:acknowledge-notes', (event, version) => trustedUpdateSender(event) && desktopUpdater.acknowledgeNotes(version))
+	ipcMain.handle('desktop-update:notice-shown', (event) => trustedUpdateSender(event) && mainWindow.isVisible() && !mainWindow.isMinimized() ? desktopUpdater.noticeShown() : desktopUpdater.getState())
+	ipcMain.handle('desktop-update:quit', async (event) => {
+		if (!trustedUpdateSender(event)) {
+			return false
+		}
+		if (desktopUpdater.getState().mandatory) {
+			closeForMandatoryUpdate()
+		} else if (await calls.endCall()) {
+			app.quit()
+		}
+		return true
+	})
+	ipcMain.handle('desktop-update:install', async (event) => {
+		if (!trustedUpdateSender(event) || updateInstallPending || mandatoryClosing) {
+			return false
+		}
+		if (calls.owner) {
+			await dialog.showMessageBox(mainWindow, { type: 'info', message: 'Finish your call before restarting to update.' })
+			return false
+		}
+		const started = desktopUpdater.install({
+			canInstall: () => !calls.owner && !logoutInProgress && !quitPending && !updateInstallPending,
+			prepareQuit: () => {
+				updateInstallPending = true
+				prepareTrayQuit()
+			},
+		})
+		if (!started) {
+			updateInstallPending = false
+			cancelTrayQuit()
+		}
+		return started
+	})
+	// Squirrel holds an installation lock briefly on first run.
+	const firstCheck = setTimeout(() => desktopUpdater.check(), process.argv.includes('--squirrel-firstrun') ? 60000 : 10000)
+	firstCheck.unref()
+	const updateTimer = setInterval(() => desktopUpdater.check(), 6 * 60 * 60 * 1000)
+	updateTimer.unref()
+	// Deferred notifications become eligible after a call ends or focus changes.
+	const noticeTimer = setInterval(() => updateNotification.update(desktopUpdater.getState()), 15000)
+	noticeTimer.unref()
+	const deadlineTimer = setInterval(() => desktopUpdater.tick(), 1000)
+	deadlineTimer.unref()
+	app.on('will-quit', () => {
+		clearTimeout(firstCheck)
+		clearInterval(updateTimer)
+		clearInterval(noticeTimer)
+		clearInterval(deadlineTimer)
+		desktopUpdater.dispose()
+	})
+	ipcMain.handle('call:claim', (event, token) => !logoutInProgress && !quitPending && !updateInstallPending && !desktopUpdater.getState().expired && createMainWindow === createTalkWindow && trustedCallSender(event) && calls.claim(event.sender, token))
+	ipcMain.handle('call:state', (event) => trustedCallSender(event) ? calls.state(event.sender) : { isCallWindow: false, hasCallWindow: false })
+	ipcMain.handle('call:release', (event) => trustedCallSender(event) && calls.release(event.sender))
+	ipcMain.handle('call:focus', (event) => trustedCallSender(event) && calls.focusCall())
+	ipcMain.on('app:relaunch', async () => {
+		if (await calls.endCall()) {
+			relaunchApp()
+		}
+	})
+	ipcMain.handle('app:setBadgeCount', (event, count) => {
+		if (event.sender === mainWindow?.webContents) {
+			app.setBadgeCount(count)
+		}
+	})
+	app.on('before-quit', (event) => {
+		if (mandatoryClosing || !calls.owner) {
+			return
+		}
+		event.preventDefault()
+		cancelTrayQuit()
+		if (quitPending) {
+			return
+		}
+		quitPending = true
+		void calls.endCall().then((left) => {
+			quitPending = false
+			if (left) {
+				app.quit()
+			}
+		})
+	})
+
+	setupMenu()
+
+	/**
+	 * Focus the main window. Restore/re-create it if needed.
+	 */
+	function focusMainWindow() {
+		if (mandatoryClosing) {
+			return
+		}
+		// There is no main window at all, the app is not initialized yet - ignore
+		if (!createMainWindow) {
+			return
+		}
+
+		// There is no window (possible on macOS) - create
+		if (!mainWindow || mainWindow.isDestroyed()) {
+			mainWindow = createMainWindow()
+			onReadyToShow(mainWindow, () => mainWindow.show())
+			return
+		}
+
+		// The window is minimized - restore
+		if (mainWindow.isMinimized()) {
+			mainWindow.restore()
+		}
+
+		// Show the window in case it is hidden in the system tray and focus it
+		mainWindow.show()
+	}
+
+	/**
+	 * Instead of creating a new app instance - focus existence one
+	 */
+	app.on('second-instance', async (event, argv, cwd) => {
+		// Older installations may still request the lock while handling an update.
+		// Never let their shortcut helper interrupt or replace the running app.
+		if (isWindows && isSquirrelMaintenance(argv)) {
+			return
+		}
+		if (isSameExecution(argv[0], cwd)) {
+			focusMainWindow()
+			return
+		}
+
+		// The second instance is another installation
+		// Open the new instance and close the current one
+		if (!await calls.endCall()) {
+			return
+		}
+		app.releaseSingleInstanceLock()
+		try {
+			const newInstance = spawn(path.resolve(argv[0]), argv.slice(1), {
+				cwd,
+				detached: true,
+				stdio: 'ignore',
+			}).on('spawn', () => {
+				newInstance.unref()
+				app.quit()
+			}).on('error', (error) => {
+				console.error('Failed to switch to the second instance', error)
+			})
+		} catch (error) {
+			console.error('Failed to switch to the second instance', error)
+		}
+	})
+
+	// Allow requests to a server with accepted untrusted certificate
+	// Note: the result of this verification is cached by domain in Electron
+	// There is no way to clean the cache except by restarting the app
+	session.defaultSession.setCertificateVerifyProc(async (request, callback) => {
+		const isAccepted = request.errorCode === 0 || await promptCertificateTrust(mainWindow, request)
+		callback(isAccepted ? 0 : -3)
+	})
+
+	// Allow web-view with accepted untrusted certificate (Login Flow)
+	app.on('certificate-error', async (event, webContents, url, error, certificate, callback) => {
+		event.preventDefault()
+		const isAccepted = await promptCertificateTrust(mainWindow, { hostname: new URL(url).hostname, certificate, verificationResult: error })
+		callback(isAccepted)
+	})
+
+	mainWindow = createWelcomeWindow()
+	createMainWindow = createWelcomeWindow
+	onReadyToShow(mainWindow, () => mainWindow.show())
+
+	ipcMain.once('appData:receive', async (event, newAppData) => {
+		appData.fromJSON(newAppData)
+
+		const welcomeWindow = mainWindow
+
+		if (appData.credentials) {
+			// User is authenticated - setup and start main window
+			enableWebRequestInterceptor(appData.serverUrl, {
+				credentials: appData.credentials,
+			})
+			mainWindow = createTalkWindow()
+			createMainWindow = createTalkWindow
+		} else {
+			// User is unauthenticated - start login window
+			await welcomeWindow.webContents.session.clearStorageData()
+			mainWindow = createAuthenticationWindow()
+			createMainWindow = createAuthenticationWindow
+		}
+
+		onReadyToShow(mainWindow, () => {
+			// Do not show the main window if it is the Talk Window opened in the background
+			const isTalkWindow = createMainWindow === createTalkWindow
+			if (!isTalkWindow || !openInBackground) {
+				mainWindow.show()
+			}
+			welcomeWindow.close()
+		})
+	})
+
+	ipcMain.handle('appData:get', () => appData.toJSON())
+
+	let macDockBounceId
+	ipcMain.on('talk:flashAppIcon', async (event, shouldFlash) => {
+		if (event.sender !== mainWindow?.webContents) {
+			return
+		}
+		// MacOS has no "flashing" but "bouncing" of the dock icon
+		if (isMac) {
+			// Stop previous bounce if any
+			if (macDockBounceId) {
+				app.dock.cancelBounce(macDockBounceId)
+				macDockBounceId = undefined
+			}
+			// (Re)start bouncing if needed
+			if (shouldFlash) {
+				macDockBounceId = app.dock.bounce()
+			}
+		} else {
+			// TODO: check if flashFrame also works on Mac since Electron 31
+			mainWindow.flashFrame(shouldFlash)
+		}
+	})
+
+	ipcMain.handle('talk:focus', async () => focusMainWindow())
+
+	ipcMain.handle('authentication:openLoginWebView', async (event, serverUrl, user) => openLoginWebView(mainWindow, serverUrl, user))
+
+	ipcMain.handle('authentication:login', async (event, newAppData) => {
+		if (!await calls.endCall()) {
+			return
+		}
+		appData.fromJSON(newAppData)
+		mainWindow.close()
+		mainWindow = createTalkWindow()
+		createMainWindow = createTalkWindow
+		onReadyToShow(mainWindow, () => mainWindow.show())
+	})
+
+	ipcMain.handle('authentication:logout', async () => {
+		if (logoutInProgress || createMainWindow !== createTalkWindow) {
+			return
+		}
+		logoutInProgress = true
+		try {
+			if (!await calls.endCall()) {
+				return
+			}
+			if (createMainWindow !== createTalkWindow) {
+				return
+			}
+			appData.reset()
+			await mainWindow.webContents.session.clearStorageData()
+			app.setBadgeCount(0)
+			const authenticationWindow = createAuthenticationWindow()
+			createMainWindow = createAuthenticationWindow
+			onReadyToShow(authenticationWindow, () => authenticationWindow.show())
+
+			mainWindow.destroy()
+			mainWindow = authenticationWindow
+		} finally {
+			logoutInProgress = false
+		}
+	})
+
+	ipcMain.on('callbox:show', (event, callboxParams) => {
+		if (event.sender !== mainWindow?.webContents || calls.owner) {
+			return
+		}
+		createCallboxWindow(callboxParams)
+	})
+
+	ipcMain.handle('help:show', () => {
+		createHelpWindow(mainWindow)
+	})
+
+	ipcMain.handle('upgrade:show', async () => {
+		if (!await calls.endCall()) {
+			return
+		}
+		const upgradeWindow = createUpgradeWindow()
+		createMainWindow = createUpgradeWindow
+
+		mainWindow.destroy()
+		mainWindow = upgradeWindow
+	})
+
+	ipcMain.on('app:relaunchWindow', async () => {
+		if (!await calls.endCall()) {
+			return
+		}
+		isInWindowRelaunch = true
+		mainWindow.destroy()
+		mainWindow = createMainWindow()
+		onReadyToShow(mainWindow, () => mainWindow.show())
+		isInWindowRelaunch = false
+	})
+
+	ipcMain.on('app:downloadURL', (event, url, filename) => triggerDownloadUrl(mainWindow, url, filename))
+
+	ipcMain.handle('certificate:verify', (event, url) => verifyCertificate(mainWindow, url))
+
+	// Click on the dock icon on macOS
+	app.on('activate', () => {
+		if (mainWindow && !mainWindow.isDestroyed()) {
+			// Show the main window if it exists but hidden (not closed), e.g., minimized to the system tray
+			mainWindow.show()
+		} else {
+			// On macOS, it is common to re-create a window in the app when the
+			// dock icon is clicked and there are no other windows open.
+			// See window-all-closed event handler.
+			mainWindow = createMainWindow()
+			onReadyToShow(mainWindow, () => mainWindow.show())
+		}
+	})
+})
+
+app.on('window-all-closed', () => {
+	// Recreating a window - keep app running
+	if (isInWindowRelaunch) {
+		return
+	}
+
+	// On macOS, it is common for applications and their menu bar to stay active even without windows
+	// until the user quits explicitly with Cmd + Q or Quit from the menu.
+	if (isMac) {
+		return
+	}
+
+	// All the windows are closed - quit the app
+	app.quit()
+})
