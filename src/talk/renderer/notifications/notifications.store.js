@@ -20,6 +20,7 @@ import { appData } from '../../../app/AppData.js'
 import { checkCurrentUserHasPendingCall } from '../../../callbox/renderer/callbox.service.ts'
 import { getAppConfigValue } from '../../../shared/appConfig.service.ts'
 import { subscribeBroadcast } from '../../../shared/broadcast.service.ts'
+import { callWindowState } from '../CallWindow/callWindowState.ts'
 import { useAppConfigValue } from '../Settings/useAppConfigValue.ts'
 import { openConversation } from '../TalkWrapper/talk.service.ts'
 import { useUserStatusStore } from '../UserStatus/userStatus.store.ts'
@@ -140,7 +141,7 @@ export function createNotificationStore() {
 	 *
 	 */
 	function playSound() {
-		if (!shouldPlaySoundChat.value) {
+		if (callWindowState.isCallWindow || !shouldPlaySoundChat.value) {
 			return
 		}
 
@@ -156,6 +157,9 @@ export function createNotificationStore() {
 	 * @param notification
 	 */
 	async function showNativeNotification(notification) {
+		if (callWindowState.isCallWindow) {
+			return
+		}
 		if (isTestNotificationApp(notification.app)) {
 			return showTestNotification(notification)
 		}
@@ -170,8 +174,14 @@ export function createNotificationStore() {
 		const isNotificationFromPendingCall = notification.objectType === 'call'
 			&& await checkCurrentUserHasPendingCall(notification.objectId)
 
+		// Ownership can change while the pending-call request is in flight.
+		if (callWindowState.isCallWindow) {
+			return
+		}
+
 		const enableCallboxConfig = getAppConfigValue('enableCallbox')
 		const shouldShowCallPopup = isNotificationFromPendingCall
+			&& !callWindowState.hasCallWindow
 			&& (enableCallboxConfig === 'always' || (enableCallboxConfig === 'respect-dnd' && !userStatusStore.isDnd))
 
 		if (shouldShowCallPopup) {
@@ -233,7 +243,13 @@ export function createNotificationStore() {
 	 * Performs the AJAX request to retrieve the notifications
 	 */
 	async function _fetch() {
+		if (callWindowState.isCallWindow) {
+			return
+		}
 		const response = await getNotificationsData(state.tabId, state.lastETag, !state.backgroundFetching, state.hasNotifyPush)
+		if (callWindowState.isCallWindow) {
+			return
+		}
 		if (response.status === 204) {
 			// 204 No Content - Intercept when no notifiers are there.
 			console.debug('Fetching notifications but no content, slowing down polling to ' + state.pollIntervalBase * 10)
@@ -413,6 +429,9 @@ export function useNotificationsStore() {
 }
 
 subscribeBroadcast('notifications:missedCall', ({ token, name, type, avatar }) => {
+	if (callWindowState.isCallWindow) {
+		return
+	}
 	const title = type === 'one2one'
 		? t('talk_desktop', 'You missed a call from {user}', { user: name })
 		: t('talk_desktop', 'You missed a group call in {call}', { call: name })

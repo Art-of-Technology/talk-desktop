@@ -4,6 +4,7 @@
  */
 
 import { ref, watchEffect } from 'vue'
+import { callWindowState } from '../CallWindow/callWindowState.ts'
 
 /**
  * Set badge counter according to Talk unread counts
@@ -16,7 +17,9 @@ export function useBadgeCountIntegration() {
 	}, { immediate: true })
 
 	watchEffect(() => {
-		window.TALK_DESKTOP.setBadgeCount(count.value)
+		if (!callWindowState.isCallWindow) {
+			window.TALK_DESKTOP.setBadgeCount(count.value)
+		}
 	})
 }
 
