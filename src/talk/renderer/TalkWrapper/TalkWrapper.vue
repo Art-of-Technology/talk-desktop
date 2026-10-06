@@ -10,6 +10,7 @@ import { subscribeBroadcast } from '../../../shared/broadcast.service.ts'
 import { installCallWindowLifecycle } from '../CallWindow/callWindowLifecycle.js'
 import { callWindowState } from '../CallWindow/callWindowState.ts'
 import { registerEdisonActionCards } from '../EdisonActions/register.js'
+import { registerNotificationCards } from '../NotificationCards/register.js'
 import { registerTalkDesktopSettingsSection } from '../Settings/index.ts'
 import { onTalkHashDirty, onTalkHashUpdate, openConversation, setTalkHash } from './talk.service.ts'
 import { useBadgeCountIntegration } from './useBadgeCountIntegration.ts'
@@ -20,9 +21,11 @@ const emit = defineEmits<{
 
 onMounted(async () => {
 	const actionCards = registerEdisonActionCards()
+	const notificationCards = registerNotificationCards()
 	// Importing the main Talk entry point mounts a Vue app to the #content
 	await import('@talk/src/main.js')
 	window.OCA.Talk.instance.$router.afterEach(() => actionCards.invalidateContexts())
+	window.OCA.Talk.instance.$router.afterEach(() => notificationCards.invalidateContexts())
 
 	// Additional integrations
 	registerTalkDesktopSettingsSection()
