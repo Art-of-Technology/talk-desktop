@@ -120,7 +120,7 @@ async function willNavigateExternalLinkHandler(event: Event<WebContentsWillNavig
 		}
 		// Talk route is about to open - navigate in app internally instead
 		// TODO: is it better to use browserWindow API here?
-		await webFrameMain.executeJavaScript(`window.location.hash = '#${talkRoute}'`)
+		await webFrameMain.executeJavaScript(`window.location.hash = ${JSON.stringify('#' + talkRoute)}`)
 		webFrameMain.reload()
 		return
 	}
