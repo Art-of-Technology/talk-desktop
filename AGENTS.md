@@ -3,6 +3,12 @@
   - SPDX-License-Identifier: MIT
 -->
 
+## Upstream review cadence
+
+Use [the upstream review skill](.agents/skills/talk-upstream-review/SKILL.md) at session start when the last complete review is missing or older than seven days, before every release, and when a known relevant upstream security fix appears. Follow its report and ledger workflow; an incomplete attempt does not reset the cadence. This is a session-triggered instruction, not a background scheduler.
+
+Reviews produce recommendations only. Do not automatically merge, cherry-pick, rebase, change dependency pins, publish, or adopt upstream changes. Verify the intended fork integration branch at review time and obtain explicit authorization for any subsequent adoption. Preserve all installer, release approval, branding, and contribution rules below.
+
 ## Fork installer workflow
 
 This fork is a reusable desktop client. Keep all committed code, guidance, filenames, branch names and commit messages brand-neutral. Company names, customer domains, logos, signing credentials and deployment-specific identities belong in ignored local build inputs, never in tracked files or release metadata without explicit publication authorization.
