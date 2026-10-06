@@ -237,11 +237,23 @@ const TALK_DESKTOP = {
 	/**
 	 * Read this installation's update state.
 	 *
-	 * @return {Promise<object>}
+	 * @return {Promise<import('./talk/renderer/updates/types.ts').DesktopUpdateState>}
 	 */
 	getDesktopUpdateState: () => ipcRenderer.invoke('desktop-update:state'),
-	/** Check and download updates from the configured private release feed. */
+	/** Check release metadata without downloading an installer. */
 	checkDesktopUpdate: () => ipcRenderer.invoke('desktop-update:check'),
+	/** Consent to download the offered, validated release. */
+	downloadDesktopUpdate: () => ipcRenderer.invoke('desktop-update:download'),
+	/**
+	 * Explicitly acknowledge the installed version's release notes.
+	 *
+	 * @param {string} version - Exact installed release version
+	 */
+	acknowledgeDesktopRelease: (version) => ipcRenderer.invoke('desktop-update:acknowledge-notes', version),
+	/** Report that the main window can display the required update notice. */
+	desktopUpdateNoticeShown: () => ipcRenderer.invoke('desktop-update:notice-shown'),
+	/** Quit this application from a mandatory update notice. */
+	quitForDesktopUpdate: () => ipcRenderer.invoke('desktop-update:quit'),
 	/** Apply the downloaded update when the main process confirms it is safe. */
 	installDesktopUpdate: () => ipcRenderer.invoke('desktop-update:install'),
 	/**

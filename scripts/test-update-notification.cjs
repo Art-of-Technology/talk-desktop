@@ -31,6 +31,15 @@ test('ready notification defers through calls, deduplicates, and click only open
 	assert.equal(opened, 1)
 	notices.update({ status: 'ready', version: '2.3.5' })
 	assert.equal(shown.length, 2)
+	notices.update({ status: 'available', version: '2.3.6' })
+	assert.equal(shown.length, 3)
+	assert.match(shown[2].options.body, /choose whether to update/)
+	shown[2].emit('click')
+	assert.equal(opened, 2)
+	notices.update({ status: 'ready', version: '2.3.6' })
+	assert.equal(shown.length, 4)
+	notices.update({ status: 'available', version: '2.3.7', mandatory: true })
+	assert.match(shown[4].options.body, /required update/)
 })
 
 test('unsupported or failed native notification never breaks updater state', () => {

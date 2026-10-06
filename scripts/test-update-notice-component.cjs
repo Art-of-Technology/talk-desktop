@@ -24,11 +24,15 @@ function setup(install = async () => true) {
 	const call = vue.reactive({ hasCallWindow: false, isCallWindow: false })
 	const props = vue.reactive({ state: { status: 'ready', version: '2.3.5' } })
 	let installCalls = 0
+	const cleanup = []
 	const context = {
+		setInterval: () => 1,
+		clearInterval: () => {},
+		document: { visibilityState: 'visible', addEventListener: () => {}, removeEventListener: () => {} },
 		exports: {},
 		require: (name) => {
 			if (name === 'vue') {
-				return vue
+				return { ...vue, onBeforeUnmount: (callback) => cleanup.push(callback) }
 			}
 			if (name === '@nextcloud/l10n') {
 				return { t: (_app, text) => text }
@@ -43,7 +47,7 @@ function setup(install = async () => true) {
 		},
 		window: {
 			localStorage: { getItem: () => null, setItem: () => {} },
-			TALK_DESKTOP: { packageInfo: { version: '2.3.4' }, installDesktopUpdate: () => {
+			TALK_DESKTOP: { packageInfo: { version: '2.3.4' }, desktopUpdateNoticeShown: async () => {}, installDesktopUpdate: () => {
 				installCalls++
 				return install()
 			} },
@@ -51,7 +55,12 @@ function setup(install = async () => true) {
 	}
 	vm.runInNewContext(compiled, context)
 	const component = scope.run(() => context.exports.default.setup(props, { expose: () => {}, emit: () => {} }))
-	return { scope, props, call, component, installCalls: () => installCalls }
+	const originalStop = scope.stop.bind(scope)
+	scope.stop = () => {
+		cleanup.forEach((callback) => callback())
+		originalStop()
+	}
+	return { scope, props, call, component, bridge: context.window.TALK_DESKTOP, installCalls: () => installCalls }
 }
 
 test('opening and dismissing actual popup never requests installation', (t) => {
@@ -104,4 +113,85 @@ test('a live call hides the popup and defers it until the call ends', async (t) 
 	fixture.call.hasCallWindow = false
 	await vue.nextTick()
 	assert.equal(fixture.component.visible.value, true)
+})
+
+test('mandatory notice stays visible during a call and cannot be dismissed', async (t) => {
+	const fixture = setup()
+	t.after(() => fixture.scope.stop())
+	fixture.props.state = { status: 'available', mandatory: true, deadline: Date.now() + 60000 }
+	fixture.call.hasCallWindow = true
+	await vue.nextTick()
+	assert.equal(fixture.component.visible.value, true)
+	fixture.component.dismiss()
+	assert.equal(fixture.component.visible.value, true)
+	fixture.call.isCallWindow = true
+	await vue.nextTick()
+	assert.equal(fixture.component.visible.value, false)
+})
+
+test('optional offer does not download until consent and double clicks are coalesced', async (t) => {
+	const fixture = setup()
+	t.after(() => fixture.scope.stop())
+	let downloads = 0
+	let finish
+	fixture.bridge.downloadDesktopUpdate = () => {
+		downloads++
+		return new Promise((resolve) => {
+			finish = resolve
+		})
+	}
+	fixture.props.state = { status: 'available', release: { version: '2.3.6', summary: ['Benefit'] } }
+	await vue.nextTick()
+	fixture.component.dismiss()
+	fixture.component.open()
+	assert.equal(downloads, 0)
+	const pending = fixture.component.download()
+	await fixture.component.download()
+	assert.equal(downloads, 1)
+	finish()
+	await pending
+})
+
+test('installed notes acknowledge only explicitly, and can reopen without a fresh update check', async (t) => {
+	const fixture = setup()
+	t.after(() => fixture.scope.stop())
+	let acknowledged
+	fixture.bridge.acknowledgeDesktopRelease = async (version) => {
+		acknowledged = version
+		return true
+	}
+	fixture.component.dismiss()
+	fixture.props.state = { status: 'idle', whatsNew: { version: '2.3.4', title: 'Installed', summary: [], sections: [] } }
+	await vue.nextTick()
+	assert.equal(fixture.component.notesVisible.value, true)
+	assert.equal(acknowledged, undefined)
+	await fixture.component.dismissNotes()
+	assert.equal(acknowledged, '2.3.4')
+	assert.equal(fixture.component.notesVisible.value, false)
+	assert.equal(fixture.component.openNotes(), true)
+})
+
+test('notes for a different installed version are never shown', async (t) => {
+	const fixture = setup()
+	t.after(() => fixture.scope.stop())
+	fixture.component.dismiss()
+	fixture.props.state = { status: 'idle', whatsNew: { version: '9.0.0' } }
+	await vue.nextTick()
+	assert.equal(fixture.component.notesVisible.value, false)
+})
+
+test('failed acknowledgement retains installed notes and allows retry', async (t) => {
+	const fixture = setup()
+	t.after(() => fixture.scope.stop())
+	fixture.component.dismiss()
+	fixture.props.state = { status: 'idle', whatsNew: { version: '2.3.4', title: 'Installed', summary: [], sections: [] } }
+	fixture.bridge.acknowledgeDesktopRelease = async () => false
+	await vue.nextTick()
+	await fixture.component.dismissNotes()
+	assert.equal(fixture.component.notesVisible.value, true)
+	assert.equal(fixture.component.acknowledging.value, false)
+	assert.match(fixture.component.feedback.value, /Could not save your acknowledgement/)
+	fixture.bridge.acknowledgeDesktopRelease = async () => true
+	await fixture.component.dismissNotes()
+	assert.equal(fixture.component.notesVisible.value, false)
 })

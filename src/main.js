@@ -14,11 +14,13 @@ const { appData } = require('./app/AppData.js')
 const { registerAppProtocolHandler } = require('./app/appProtocol.ts')
 const { verifyCertificate, promptCertificateTrust } = require('./app/certificate.service.ts')
 const { cli } = require('./app/cli.ts')
+const { createReleaseStorage, createManifestFetcher } = require('./app/DesktopReleaseIO.js')
 const { DesktopUpdater } = require('./app/DesktopUpdater.js')
 const { openChromeWebRtcInternals } = require('./app/dev.utils.ts')
 const { triggerDownloadUrl } = require('./app/downloads.ts')
 const { setInternalNavigationTarget } = require('./app/externalLinkHandlers.ts')
 const { initLaunchAtStartupListener } = require('./app/launchAtStartup.config.ts')
+const { createMandatoryShutdown } = require('./app/MandatoryUpdateShutdown.js')
 const { runMigrations } = require('./app/migration.service.ts')
 const { systemInfo, isMac, isWindows, isSameExecution, isSquirrel, relaunchApp } = require('./app/system.utils.ts')
 const { applyTheme } = require('./app/theme.config.ts')
@@ -201,6 +203,19 @@ app.whenReady().then(async () => {
 	let logoutInProgress = false
 	let quitPending = false
 	let updateInstallPending = false
+	let mandatoryClosing = false
+	let expiredDeadlineAtLaunch
+	let requiredNoticeFocused = false
+	const trustedUpdateSender = (event) => event.sender === mainWindow?.webContents && event.senderFrame === event.sender.mainFrame
+	const closeForMandatoryUpdate = createMandatoryShutdown({
+		app,
+		getWindows: () => BrowserWindow.getAllWindows(),
+		prepareQuit: prepareTrayQuit,
+		markQuitting: () => {
+			mandatoryClosing = true
+			quitPending = true
+		},
+	})
 	const updateNotification = new UpdateNotification({
 		Notification,
 		title: `${BUILD_CONFIG.applicationName} — Update available`,
@@ -216,8 +231,19 @@ app.whenReady().then(async () => {
 		autoUpdater,
 		feedUrl: BUILD_CONFIG.updateFeedUrl,
 		supported: app.isPackaged && isWindows && isSquirrel,
+		installedVersion: app.getVersion(),
+		// Keep account cookies and the default-session auth interceptor out of the feed.
+		fetchManifest: createManifestFetcher((url, options) => session.fromPartition('desktop-update-metadata').fetch(url, options)),
+		storage: createReleaseStorage(app.getPath('userData')),
+		onMandatoryExpired: (state) => {
+			// After a forced close, reopen in the non-dismissible update-only UI.
+			// Repeatedly exiting at startup would prevent downloading the fix.
+			if (state.deadline !== expiredDeadlineAtLaunch) {
+				closeForMandatoryUpdate()
+			}
+		},
 		onState: (state) => {
-			if (state.status === 'error' && updateInstallPending) {
+			if ((state.status === 'error' || state.message) && updateInstallPending) {
 				updateInstallPending = false
 				cancelTrayQuit()
 			}
@@ -225,12 +251,38 @@ app.whenReady().then(async () => {
 				window.webContents.send('desktop-update:state', state)
 			}
 			updateNotification.update(state)
+			if (state.mandatory && !requiredNoticeFocused && mainWindow && !mainWindow.isDestroyed()) {
+				requiredNoticeFocused = true
+				focusMainWindow()
+				mainWindow.focus()
+				mainWindow.webContents.send('desktop-update:show')
+			} else if (!state.mandatory) {
+				requiredNoticeFocused = false
+				expiredDeadlineAtLaunch = undefined
+			}
 		},
 	})
-	ipcMain.handle('desktop-update:state', () => desktopUpdater.getState())
-	ipcMain.handle('desktop-update:check', (event) => trustedCallSender(event) ? desktopUpdater.check() : desktopUpdater.getState())
+	if (desktopUpdater.getState().expired) {
+		expiredDeadlineAtLaunch = desktopUpdater.getState().deadline
+	}
+	ipcMain.handle('desktop-update:state', (event) => trustedUpdateSender(event) ? desktopUpdater.getState() : { status: 'disabled' })
+	ipcMain.handle('desktop-update:check', (event) => trustedUpdateSender(event) ? desktopUpdater.check() : { status: 'disabled' })
+	ipcMain.handle('desktop-update:download', (event) => trustedUpdateSender(event) && !mandatoryClosing ? desktopUpdater.download() : { status: 'disabled' })
+	ipcMain.handle('desktop-update:acknowledge-notes', (event, version) => trustedUpdateSender(event) && desktopUpdater.acknowledgeNotes(version))
+	ipcMain.handle('desktop-update:notice-shown', (event) => trustedUpdateSender(event) && mainWindow.isVisible() && !mainWindow.isMinimized() ? desktopUpdater.noticeShown() : desktopUpdater.getState())
+	ipcMain.handle('desktop-update:quit', async (event) => {
+		if (!trustedUpdateSender(event)) {
+			return false
+		}
+		if (desktopUpdater.getState().mandatory) {
+			closeForMandatoryUpdate()
+		} else if (await calls.endCall()) {
+			app.quit()
+		}
+		return true
+	})
 	ipcMain.handle('desktop-update:install', async (event) => {
-		if (!trustedCallSender(event) || updateInstallPending) {
+		if (!trustedUpdateSender(event) || updateInstallPending || mandatoryClosing) {
 			return false
 		}
 		if (calls.owner) {
@@ -258,7 +310,16 @@ app.whenReady().then(async () => {
 	// Deferred notifications become eligible after a call ends or focus changes.
 	const noticeTimer = setInterval(() => updateNotification.update(desktopUpdater.getState()), 15000)
 	noticeTimer.unref()
-	ipcMain.handle('call:claim', (event, token) => !logoutInProgress && !quitPending && !updateInstallPending && createMainWindow === createTalkWindow && trustedCallSender(event) && calls.claim(event.sender, token))
+	const deadlineTimer = setInterval(() => desktopUpdater.tick(), 1000)
+	deadlineTimer.unref()
+	app.on('will-quit', () => {
+		clearTimeout(firstCheck)
+		clearInterval(updateTimer)
+		clearInterval(noticeTimer)
+		clearInterval(deadlineTimer)
+		desktopUpdater.dispose()
+	})
+	ipcMain.handle('call:claim', (event, token) => !logoutInProgress && !quitPending && !updateInstallPending && !desktopUpdater.getState().expired && createMainWindow === createTalkWindow && trustedCallSender(event) && calls.claim(event.sender, token))
 	ipcMain.handle('call:state', (event) => trustedCallSender(event) ? calls.state(event.sender) : { isCallWindow: false, hasCallWindow: false })
 	ipcMain.handle('call:release', (event) => trustedCallSender(event) && calls.release(event.sender))
 	ipcMain.handle('call:focus', (event) => trustedCallSender(event) && calls.focusCall())
@@ -273,7 +334,7 @@ app.whenReady().then(async () => {
 		}
 	})
 	app.on('before-quit', (event) => {
-		if (!calls.owner) {
+		if (mandatoryClosing || !calls.owner) {
 			return
 		}
 		event.preventDefault()
@@ -296,6 +357,9 @@ app.whenReady().then(async () => {
 	 * Focus the main window. Restore/re-create it if needed.
 	 */
 	function focusMainWindow() {
+		if (mandatoryClosing) {
+			return
+		}
 		// There is no main window at all, the app is not initialized yet - ignore
 		if (!createMainWindow) {
 			return
