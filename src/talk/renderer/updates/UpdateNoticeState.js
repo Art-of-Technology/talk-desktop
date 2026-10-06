@@ -20,12 +20,16 @@ class UpdateNoticeState {
 	}
 
 	reconcile(state, inCall, manual = false) {
+		if (state.mandatory) {
+			this.visible = true
+			return true
+		}
 		if (inCall) {
 			this.deferred ||= this.visible || manual
 			this.visible = false
 			return false
 		}
-		const actionable = ['downloading', 'ready'].includes(state.status)
+		const actionable = ['available', 'downloading', 'ready'].includes(state.status)
 		const key = `${state.status}:${state.version || ''}`
 		if (manual || (actionable && (this.visible || this.deferred || !this.seen.has(key)))) {
 			this.visible = true

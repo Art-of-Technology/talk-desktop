@@ -8,17 +8,21 @@ class UpdateNotification {
 	}
 
 	update(state) {
-		if (state.status !== 'ready' || !this.canNotify() || !this.Notification.isSupported()) {
+		if (!['available', 'ready'].includes(state.status) || !this.canNotify() || !this.Notification.isSupported()) {
 			return
 		}
-		const key = state.version || 'ready'
+		const key = `${state.version || 'update'}:${state.status}`
 		if (this.seen.has(key)) {
 			return
 		}
 		try {
 			const notification = new this.Notification({
 				title: this.title,
-				body: 'An update is ready. Open the app to restart and install it.',
+				body: state.mandatory
+					? 'A required update is available. Open the app to review the deadline and update.'
+					: state.status === 'ready'
+						? 'An update is ready. Open the app to restart and install it.'
+						: 'A new version is available. Open the app to see what changed and choose whether to update.',
 				silent: true,
 			})
 			notification.on('click', this.onClick)

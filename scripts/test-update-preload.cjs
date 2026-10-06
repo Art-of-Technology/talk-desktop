@@ -10,6 +10,11 @@ const { UpdateNoticeState } = require('../src/talk/renderer/updates/UpdateNotice
 
 test('preload supplies installed version for update notice isolation and cleans notification listeners', () => {
 	const ipc = new EventEmitter()
+	const calls = []
+	ipc.invoke = (...args) => {
+		calls.push(args)
+		return Promise.resolve()
+	}
 	let bridge
 	vm.runInNewContext(readFileSync(path.join(__dirname, '../src/preload.js'), 'utf8'), {
 		require: (name) => {
@@ -35,4 +40,16 @@ test('preload supplies installed version for update notice isolation and cleans 
 	unsubscribe()
 	ipc.emit('desktop-update:show')
 	assert.equal(notices, 1)
+	bridge.checkDesktopUpdate()
+	bridge.downloadDesktopUpdate()
+	bridge.acknowledgeDesktopRelease('2.3.5')
+	bridge.desktopUpdateNoticeShown()
+	bridge.quitForDesktopUpdate()
+	assert.deepEqual(calls, [
+		['desktop-update:check'],
+		['desktop-update:download'],
+		['desktop-update:acknowledge-notes', '2.3.5'],
+		['desktop-update:notice-shown'],
+		['desktop-update:quit'],
+	])
 })

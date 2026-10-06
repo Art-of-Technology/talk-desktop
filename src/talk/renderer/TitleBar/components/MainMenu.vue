@@ -5,6 +5,7 @@
 
 <script setup lang="ts">
 import type { Ref } from 'vue'
+import type { DesktopUpdateState } from '../../updates/types.ts'
 
 import axios from '@nextcloud/axios'
 import { t } from '@nextcloud/l10n'
@@ -56,7 +57,7 @@ watch(isTalkInitialized ?? ref(false), async (initialized, _previous, onCleanup)
 	}
 }, { immediate: true })
 
-type UpdateState = Awaited<ReturnType<typeof window.TALK_DESKTOP.getDesktopUpdateState>>
+type UpdateState = DesktopUpdateState
 const updateState = ref<UpdateState>({ status: 'idle' })
 const updateFeedback = ref('')
 const updateNotice = ref<InstanceType<typeof UpdateNotice>>()
@@ -64,6 +65,7 @@ let receivedUpdateEvent = false
 const updateDisabled = computed(() => ['checking', 'disabled', 'unsupported'].includes(updateState.value.status))
 const updateLabel = computed(() => {
 	switch (updateState.value.status) {
+		case 'available': return t('talk_desktop', 'Update available')
 		case 'checking': return t('talk_desktop', 'Checking for updates…')
 		case 'downloading': return t('talk_desktop', 'Downloading update…')
 		case 'ready': return t('talk_desktop', 'Restart to update')
@@ -105,7 +107,7 @@ onBeforeUnmount(unsubscribeUpdateShow)
 async function update() {
 	updateFeedback.value = ''
 	try {
-		if (['ready', 'downloading'].includes(updateState.value.status)) {
+		if (updateState.value.mandatory || ['available', 'ready', 'downloading'].includes(updateState.value.status)) {
 			if (!updateNotice.value?.open()) {
 				updateFeedback.value = t('talk_desktop', 'Finish your call before opening the update dialog.')
 			}
@@ -129,7 +131,7 @@ async function update() {
 		variant="tertiary-no-background"
 		container="body">
 		<template #icon>
-			<UiDotBadge insetInlineEnd="10%" :enabled="updateState.status === 'ready'">
+			<UiDotBadge insetInlineEnd="10%" :enabled="updateState.mandatory || ['available', 'ready'].includes(updateState.status)">
 				<IconMenu :size="20" fillColor="var(--color-background-plain-text)" />
 			</UiDotBadge>
 		</template>
@@ -142,6 +144,9 @@ async function update() {
 		</NcActionButton>
 		<NcActionButton v-if="updateFeedback" disabled>
 			{{ updateFeedback }}
+		</NcActionButton>
+		<NcActionButton v-if="updateState.currentRelease || updateState.whatsNew" closeAfterClick @click="updateNotice?.openNotes()">
+			{{ t('talk_desktop', 'What’s new') }}
 		</NcActionButton>
 		<NcActionSeparator />
 

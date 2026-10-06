@@ -79,3 +79,14 @@ test('unavailable storage does not prevent notices or in-memory suppression', ()
 	notice.dismiss()
 	assert.equal(notice.reconcile(ready, false), false)
 })
+
+test('mandatory policy ignores saved dismissals and active-call deferral', () => {
+	const { notice } = fixture()
+	const state = { status: 'available', version: '2.3.6' }
+	notice.reconcile(state, false)
+	notice.dismiss()
+	assert.equal(notice.reconcile(state, false), false)
+	assert.equal(notice.reconcile({ ...state, mandatory: true }, true), true)
+	notice.dismiss()
+	assert.equal(notice.reconcile({ ...state, mandatory: true }, true), true)
+})
