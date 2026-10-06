@@ -29,6 +29,14 @@ Set CHANNEL=stable for packaging. Verify the actual packaged audio with `scripts
 
 Deliver the requested local installer and checksum with its platform/architecture, version, and concise installation instructions. Explain that users should quit other clients during notification testing to avoid duplicate alerts. Do not install it, publish a release or upload a customer-branded artifact unless the user requests that action. Keep company-specific delivery notes local. No server deployment is required for a bundled desktop sound replacement.
 
+## Release content approval gate
+
+For every requested release, follow `docs/release-publication.md`. Prepare two distinct drafts: short pre-install benefits and detailed first-launch changes. Include optional screenshot proposals and the explicit optional/mandatory policy and grace period. Present those drafts for owner approval before publishing a feed, installer or update announcement. Never manufacture approval from a request to implement a fix. Previously granted approval applies only to its matching reviewed metadata/artifact digest; changes require renewed approval.
+
+Use `scripts/release-authoring.cjs review` to bind the exact manifest, feed destination and full package. Record the owner's actual explicit approval in a private approval artifact and use `stage` to prepare publication files. Keep branded notes, screenshots, approval records and feed destinations in ignored/private storage. Do not upload the approval record. Preserve version-pinned release directories and historical notes. A generic code merge/deploy approval does not authorize an unreviewed mandatory update that closes users' apps.
+
+Existing clients keep their old update experience until the bootstrap upgrade. Explain this limitation and Windows elevation prompts accurately. A macOS release requires its own native build and qualification even though source is shared. Do not publish or enforce a mandatory update on an unqualified platform.
+
 ## Nextcloud Contribution Policy
 
 All contributions generated or assisted by this agent must fully comply with:
