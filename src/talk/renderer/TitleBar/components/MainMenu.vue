@@ -6,9 +6,10 @@
 <script setup lang="ts">
 import type { Ref } from 'vue'
 
+import axios from '@nextcloud/axios'
 import { t } from '@nextcloud/l10n'
 import { generateUrl } from '@nextcloud/router'
-import { computed, inject, onBeforeMount, onBeforeUnmount, ref } from 'vue'
+import { computed, inject, onBeforeMount, onBeforeUnmount, ref, watch } from 'vue'
 import NcActionButton from '@nextcloud/vue/components/NcActionButton'
 import NcActionLink from '@nextcloud/vue/components/NcActionLink'
 import NcActions from '@nextcloud/vue/components/NcActions'
@@ -33,6 +34,27 @@ const showHelp = () => window.TALK_DESKTOP.showHelp()
 const reload = () => window.location.reload()
 const openSettings = () => window.OCA.Talk.Settings.open()
 const openInWeb = () => window.open(generateUrl(getCurrentTalkRoutePath()), '_blank')
+const integrationsAvailable = ref(false)
+const openIntegrations = () => window.open(generateUrl('/apps/workspace_integrations/'), '_blank')
+watch(isTalkInitialized ?? ref(false), async (initialized, _previous, onCleanup) => {
+	integrationsAvailable.value = false
+	if (!initialized) {
+		return
+	}
+	const controller = new AbortController()
+	onCleanup(() => controller.abort())
+	try {
+		const { data } = await axios.get(generateUrl('/apps/workspace_integrations/api/capabilities'), {
+			signal: controller.signal,
+			timeout: 5000,
+		})
+		if (!controller.signal.aborted) {
+			integrationsAvailable.value = data?.enabled === true
+		}
+	} catch {
+		// The optional server app may not be installed or available to this account.
+	}
+}, { immediate: true })
 
 type UpdateState = Awaited<ReturnType<typeof window.TALK_DESKTOP.getDesktopUpdateState>>
 const updateState = ref<UpdateState>({ status: 'idle' })
@@ -124,6 +146,12 @@ async function update() {
 		<NcActionSeparator />
 
 		<template v-if="isTalkInitialized">
+			<NcActionButton v-if="integrationsAvailable" closeAfterClick @click="openIntegrations">
+				<template #icon>
+					<IconCogOutline :size="20" />
+				</template>
+				{{ t('talk_desktop', 'Integrations (opens in browser)') }}
+			</NcActionButton>
 			<NcActionButton closeAfterClick @click="openInWeb">
 				<template #icon>
 					<IconWeb :size="20" />
