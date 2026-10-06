@@ -1,0 +1,18 @@
+{
+  "sourceRepository": "https://github.com/Art-of-Technology/nextcloud",
+  "sourceRevision": "01b497c90cd1658a2c1705d625e17078402f8239",
+  "sourceState": "Exact bytes from the pinned source commit; no runtime remote code.",
+  "license": "AGPL-3.0-or-later",
+  "files": [
+    {
+      "file": "notification-card.js",
+      "sourcePath": "custom_apps/workspace_integrations/js/notification-card.js",
+      "sha256": "87311bc1fb52a4133ab6fbe1715ac44b4a0be8d607a780f6b2f43be7aa96b745"
+    },
+    {
+      "file": "notification-card.css",
+      "sourcePath": "custom_apps/workspace_integrations/css/notification-card.css",
+      "sha256": "5c4614d23e900b54c69d2c9d6757ca484060a3c69678df3bbd1832ae50814beb"
+    }
+  ]
+}

@@ -16,6 +16,8 @@ export default [
 			'src/shared/renderer/assets/**/*',
 			'scripts/nextcloud-app-host/templates/**/*',
 			'resources/server-global-styles/**/*',
+			// Exact-byte shared renderer; verified by provenance hashes and DOM tests.
+			'src/talk/renderer/NotificationCards/vendor/**/*',
 		],
 	},
 	{
