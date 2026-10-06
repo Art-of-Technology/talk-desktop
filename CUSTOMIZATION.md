@@ -60,33 +60,25 @@ Company names, server domains and branding belong in the ignored `.overrides/bui
 
 Windows Squirrel builds use the optional HTTPS `updateFeedUrl` from the ignored
 build profile. There is no upstream release fallback. Without a configured feed,
-updates are disabled. Other platforms show manual updates until separately qualified.
-Install the first updater-enabled build manually. Subsequent checks use the same
-menu, download the package and offer Restart to update. Restart is blocked during
-an active call. Squirrel also applies a downloaded update on the next normal app
-start; the client never forces an automatic restart.
+updates are disabled. Other platforms require separate native updater qualification.
 
-The main chat window shows a dismissible Update available dialog while downloading,
-then Restart to update when ready. Progress is indeterminate because the native
-Squirrel API does not expose reliable byte progress. Later keeps the download and
-menu entry available. Notices wait until calls end and are suppressed after being
-shown for the same installed/target version. A silent Windows notification opens
-the dialog when the app is in the background; it never installs by itself.
+The new flow checks `release-manifest.json` without invoking native download.
+Users see approved short benefits and choose Update now or Skip for now before
+an optional update downloads. The native download uses the immutable
+`releases/<version>/` feed. Restart to update remains a separate decision;
+optional updates do not interrupt calls. Detailed notes for the installed version
+appear on first launch, with optional screenshots and explicit acknowledgement.
+Mandatory releases use their approved grace period and persist the deadline across
+restarts and temporary offline failures. The app closes at that deadline, including
+an active call. Windows may still request elevation during installation.
 
-Checks run shortly after startup and every six hours. The feed contains RELEASES
-and the full nupkg under the exact filename listed in that manifest. Forge renames
-output artifacts, so restore and verify their feed names with:
-
-```
-node scripts/stage-desktop-update.cjs <manifest-artifact> <nupkg-artifact> <fresh-output-directory>
-node --test scripts/test-desktop-updater.cjs scripts/test-stage-desktop-update.cjs
-```
-
-Publish packages before replacing RELEASES atomically. Do not cache RELEASES;
-versioned packages may be immutable. Keep deployment URLs and branded packages
-outside source control. Package verification and mocked updater tests do not
-prove an installed upgrade; test the hosted feed and upgrade on a separate test
-installation before broad distribution. macOS needs its own signed build and feed.
+Follow [the release publication workflow](docs/release-publication.md) for drafting,
+owner approval, digest-bound staging, immutable publication and qualification.
+The authoring tool never grants approval or uploads files. Keep deployment content
+private. Existing 2.3.5 and earlier clients must first receive this implementation
+through a qualified bootstrap update or manual installer; their old UI cannot be
+changed by new feed metadata. macOS inherits shared source but still needs its own
+build, signing, feed and installation qualification.
 
 ## Sound
 
