@@ -72,6 +72,35 @@ test('opening and dismissing actual popup never requests installation', (t) => {
 	assert.equal(fixture.installCalls(), 0)
 })
 
+test('Mac downloaded notice reveals the verified installer without restarting', async (t) => {
+	const fixture = setup()
+	t.after(() => fixture.scope.stop())
+	fixture.props.state.manualInstall = true
+	let reveals = 0
+	fixture.bridge.revealDesktopUpdate = async () => {
+		reveals++
+		return true
+	}
+	await vue.nextTick()
+	assert.equal(fixture.component.title.value, 'Install your downloaded update')
+	await fixture.component.restart()
+	assert.equal(fixture.installCalls(), 0)
+	await fixture.component.revealInstaller()
+	assert.equal(reveals, 1)
+	assert.equal(fixture.installCalls(), 0)
+	assert.equal(fixture.component.feedback.value, '')
+})
+
+test('Mac reveal failure retains the instructions with useful feedback', async (t) => {
+	const fixture = setup()
+	t.after(() => fixture.scope.stop())
+	fixture.props.state.manualInstall = true
+	fixture.bridge.revealDesktopUpdate = async () => false
+	await fixture.component.revealInstaller()
+	assert.match(fixture.component.feedback.value, /Could not locate the installer/)
+	assert.equal(fixture.component.visible.value, true)
+})
+
 test('actual Restart action invokes native bridge only once while pending', async (t) => {
 	let finish
 	const fixture = setup(() => new Promise((resolve) => {

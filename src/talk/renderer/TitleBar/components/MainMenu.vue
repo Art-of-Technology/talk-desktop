@@ -68,7 +68,7 @@ const updateLabel = computed(() => {
 		case 'available': return t('talk_desktop', 'Update available')
 		case 'checking': return t('talk_desktop', 'Checking for updates…')
 		case 'downloading': return t('talk_desktop', 'Downloading update…')
-		case 'ready': return t('talk_desktop', 'Restart to update')
+		case 'ready': return updateState.value.manualInstall ? t('talk_desktop', 'Install downloaded update') : t('talk_desktop', 'Restart to update')
 		case 'error': return t('talk_desktop', 'Retry update check')
 		case 'disabled': return t('talk_desktop', 'Updates not configured')
 		case 'unsupported': return t('talk_desktop', 'Manual updates only')

@@ -1,11 +1,14 @@
 /* SPDX-License-Identifier: AGPL-3.0-or-later */
+const { validateMacManifest } = require('./MacUpdateManifest.js')
 const { validateManifest, compareVersions, feedBase } = require('./ReleaseManifest.js')
 const clone = (value) => JSON.parse(JSON.stringify(value))
 
 // Native discovery downloads immediately. Invoke it only after explicit consent.
 class DesktopUpdater {
-	constructor({ autoUpdater, feedUrl, supported, installedVersion, fetchManifest, storage = { read: () => null, write: () => {} }, now = Date.now, onState = () => {}, onMandatoryExpired = () => {} }) {
+	constructor({ autoUpdater, feedUrl, supported, installedVersion, fetchManifest, manualDownloader, arch, storage = { read: () => null, write: () => {} }, now = Date.now, onState = () => {}, onMandatoryExpired = () => {} }) {
 		Object.assign(this, { autoUpdater, installedVersion, fetchManifest, storage, now, onState, onMandatoryExpired })
+		this.manualDownloader = manualDownloader
+		this.validateManifest = manualDownloader ? (input, feed) => validateMacManifest(input, feed, arch) : validateManifest
 
 		this.state = { status: 'disabled' }
 
@@ -46,7 +49,7 @@ class DesktopUpdater {
 
 			if (saved && saved.feedUrl === this.feedUrl) {
 				if (saved.manifest) {
-					this.manifest = validateManifest(saved.manifest, this.feedUrl)
+					this.manifest = this.validateManifest(saved.manifest, this.feedUrl)
 				}
 
 				this.saved.acknowledged = Array.isArray(saved.acknowledged) ? saved.acknowledged.filter((v) => typeof v === 'string').slice(-100) : []
@@ -58,6 +61,10 @@ class DesktopUpdater {
 				}
 			}
 		} catch { /* Untrusted or corrupted cache cannot introduce a policy. */ }
+
+		if (this.manualDownloader) {
+			return
+		}
 
 		this.listen('update-downloaded', (_event, _notes, version) => {
 			if (this.state.status !== 'downloading') {
@@ -98,6 +105,7 @@ class DesktopUpdater {
 
 	dispose() {
 		this.disposed = true
+		this.manualDownloader?.dispose()
 
 		for (const [event, handler] of this.listeners) {
 			this.autoUpdater.removeListener(event, handler)
@@ -137,7 +145,7 @@ class DesktopUpdater {
 		const installed = this.manifest?.releases.find((release) => release.version === this.installedVersion)
 
 		const persistenceFailed = Boolean(this.policy && this.persistenceFailed)
-		return clone({ ...this.state, ...(offered ? { version: offered.version, release: offered } : {}), mandatory: Boolean(this.policy), persistenceFailed, ...(this.policy?.deadline !== undefined ? { deadline: this.policy.deadline, expired: this.now() >= this.policy.deadline } : {}), ...(persistenceFailed ? { expired: true, message: 'The required update policy could not be saved. Update or quit; normal use is unavailable until it can be saved.' } : {}), ...(installed ? { currentRelease: installed, ...(this.saved.acknowledged.includes(installed.version) ? {} : { whatsNew: installed }) } : {}) })
+		return clone({ ...this.state, ...(this.manualDownloader ? { manualInstall: true } : {}), ...(offered ? { version: offered.version, release: offered } : {}), mandatory: Boolean(this.policy), persistenceFailed, ...(this.policy?.deadline !== undefined ? { deadline: this.policy.deadline, expired: this.now() >= this.policy.deadline } : {}), ...(persistenceFailed ? { expired: true, message: 'The required update policy could not be saved. Update or quit; normal use is unavailable until it can be saved.' } : {}), ...(installed ? { currentRelease: installed, ...(this.saved.acknowledged.includes(installed.version) ? {} : { whatsNew: installed }) } : {}) })
 	}
 
 	setState(state) {
@@ -158,7 +166,7 @@ class DesktopUpdater {
 		}
 
 		try {
-			const manifest = validateManifest(await this.fetchManifest(new URL('release-manifest.json', this.feedUrl).href), this.feedUrl)
+			const manifest = this.validateManifest(await this.fetchManifest(new URL('release-manifest.json', this.feedUrl).href), this.feedUrl)
 
 			if (this.disposed) {
 				return this.getState()
@@ -202,6 +210,9 @@ class DesktopUpdater {
 		this.accepted = clone(release)
 
 		this.setState({ status: 'downloading' })
+		if (this.manualDownloader) {
+			return this.downloadMac(release)
+		}
 
 		try {
 			this.autoUpdater.setFeedURL({ url: new URL(`releases/${release.version}/`, this.feedUrl).href })
@@ -212,6 +223,32 @@ class DesktopUpdater {
 		}
 
 		return this.getState()
+	}
+
+	async downloadMac(release) {
+		try {
+			this.downloadedFile = await this.manualDownloader.download(release.macDownload, release.version)
+			if (!this.disposed) {
+				this.setState({ status: 'ready' })
+			}
+		} catch {
+			this.downloadedFile = undefined
+			if (!this.disposed) {
+				this.setState({ status: 'error', message: 'Could not download or verify the update. Please try again.' })
+			}
+		}
+		return this.getState()
+	}
+
+	getManualDownload() {
+		return this.manualDownloader && this.state.status === 'ready' ? this.downloadedFile : undefined
+	}
+
+	missingManualDownload() {
+		if (this.manualDownloader && this.state.status === 'ready') {
+			this.downloadedFile = undefined
+			this.setState({ status: 'error', message: 'The installer was moved or removed. Please download it again.' })
+		}
 	}
 
 	noticeShown() {
@@ -259,7 +296,7 @@ class DesktopUpdater {
 	}
 
 	install({ canInstall, prepareQuit }) {
-		if (!this.enabled || this.disposed || this.installing || this.state.status !== 'ready') {
+		if (this.manualDownloader || !this.enabled || this.disposed || this.installing || this.state.status !== 'ready') {
 			return false
 		}
 
