@@ -2,5 +2,18 @@
   "schemaVersion": 1,
   "streams": [],
   "decisions": [],
-  "note": "No upstream review has been performed by installing this guidance. Initialize each stream from a verified fork point or pinned source baseline; never skip unreviewed history."
+  "note": "No upstream review has been performed by installing this guidance. Initialize each stream from a verified fork point or pinned source baseline; never skip unreviewed history.",
+  "lastPartialAttempt": {
+    "date": "2026-10-07",
+    "report": "docs/upstream/reviews/2026-10-07-macos-local-startup.md",
+    "forkSha": "63b9e82a82e45dfbb2cd1854ac35fd328fe8a972",
+    "desktopTipSha": "02175daf0160ab2a82aa956e9d3e5323a784c164",
+    "gaps": [
+      "Earlier desktop backlog not fully reviewed",
+      "Recent desktop interval only partially assessed",
+      "Frontend source history not reviewed",
+      "Official security advisories not checked"
+    ],
+    "completeCursorsAdvanced": false
+  }
 }

@@ -59,7 +59,7 @@ acknowledged that departure yet.
 
 Basic Info includes a read-only Conversation ID and Copy button below the picture. This is the conversation token used by Talk integrations, not the internal numeric room ID. Clipboard success and failure are shown; the value remains selectable for manual copying. The desktop webpack configuration wraps the original BasicInfo component without modifying the pinned Talk checkout. This is a desktop change; it does not update the server web UI or mobile apps.
 
-Validation: ESLint, Vue type checking and Windows x64 packaging passed. The actual packaged archive contains the identifier component and retains the verified custom message and original call audio. Authenticated UI/clipboard behavior and macOS packaging have not yet been verified for this change.
+Validation: ESLint, Vue type checking and Windows x64 packaging passed. The actual packaged archive contains the identifier component and retains the verified custom message and original call audio. Authenticated UI/clipboard behavior remains unverified. macOS packaging was subsequently verified on 2026-10-07; see the macOS qualification boundary below.
 
 ## Deployment configuration
 
@@ -129,7 +129,9 @@ Quit the official client and close or mute any browser client before testing. Si
 
 Upstream supports arm64, x64 and universal builds. Build and test on macOS. The same audio customization applies. Distribute the DMG privately; App Store submission is not required. For normal Gatekeeper acceptance use Developer ID signing and notarization. Forge supports APPLE_ID, APPLE_ID_PASSWORD and APPLE_TEAM_ID, with the signing identity installed in the build Mac's keychain. Keep credentials outside source control.
 
-No Mac artifact has been built or tested here.
+On 2026-10-07, the Apple Silicon build was installed and started on a Mac, and a universal DMG was compiled and statically verified. Type checking, 27 call/window tests and both package verifiers passed. Intel runtime and authenticated login, messaging, audible notifications, calls and screen sharing remain unverified. The internal artifact has no Developer ID signing/notarization; macOS automatic updates remain disabled.
+
+Use the [macOS internal distribution runbook](docs/macos-distribution.md) for architecture-specific build/package commands, checksum and provenance staging, manual download publication and live acceptance. Preserve the approved application name and identity in the ignored local profile. Packaging does not itself qualify login or calls.
 
 https://developer.apple.com/macos/distribution/
 https://developer.apple.com/developer-id/

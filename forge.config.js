@@ -3,7 +3,6 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-const { MakerDMG } = require('@electron-forge/maker-dmg')
 const { MakerFlatpak } = require('@electron-forge/maker-flatpak')
 const { MakerSquirrel } = require('@electron-forge/maker-squirrel')
 const { MakerWix } = require('@electron-forge/maker-wix')
@@ -13,6 +12,7 @@ const mri = require('mri')
 const fs = require('node:fs')
 const path = require('node:path')
 const semver = require('semver')
+const { MakerNativeDMG } = require('./build/MakerNativeDMG.cjs')
 const { resolveBuildConfig, resolveTalkPath } = require('./build/resolveBuildConfig.js')
 const packageJSON = require('./package.json')
 const { MIN_REQUIRED_BUILT_IN_TALK_VERSION } = require('./src/constants.js')
@@ -330,16 +330,10 @@ module.exports = {
 			signWithParams: hasWindowsSign && process.env.WINDOWS_SIGN_PARAMS,
 		}),
 
-		// https://js.electronforge.io/interfaces/_electron_forge_maker_dmg.MakerDMGConfig.html
-		BUILD_CONFIG.macosDmg && new MakerDMG({
-			icon: path.join(__dirname, 'img/icons/icon.icns'),
-			background: path.join(__dirname, 'img/dmg-background.png'),
-			// https://github.com/LinusU/node-appdmg?tab=readme-ov-file#specification
-			additionalDMGOptions: {
-				// Background does not work when the title has spaces or special characters
-				title: BUILD_CONFIG.applicationNameSanitized,
-			},
-		}),
+		// Native tools keep DMG packaging compatible with Node 24 and later.
+		BUILD_CONFIG.macosDmg && new MakerNativeDMG((arch) => ({
+			name: generateDistName('darwin', arch, '.dmg'),
+		})),
 
 		// https://js.electronforge.io/classes/_electron_forge_maker_flatpak.MakerFlatpak-1.html
 		BUILD_CONFIG.linuxFlatpak && new MakerFlatpak({
