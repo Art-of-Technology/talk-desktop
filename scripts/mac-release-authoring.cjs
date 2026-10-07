@@ -29,7 +29,7 @@ function privateOutput(filename) {
 }
 
 /**
- * Bind release notes and a locally qualified unsigned DMG to its destination.
+ * Bind release notes and a locally qualified manual-install DMG to its destination.
  *
  * @param {string} manifestPath Draft metadata
  * @param {string} feedUrl HTTPS feed

@@ -1,10 +1,10 @@
 <!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
 
-# Unsigned macOS update downloads
+# Manual macOS update downloads
 
 This fork supports release notes and manual DMG downloads on macOS. Build the
 application from this fork to include the feature. It does not use Electron's
-native `autoUpdater` to install unsigned Mac updates. The user downloads the DMG,
+native `autoUpdater` to install Mac updates. The user downloads the DMG,
 quits the application, and installs the replacement manually. Updates remain
 optional: Mac metadata with `mandatory: true` is rejected.
 
@@ -21,7 +21,8 @@ Show in Finder button; neither downloads nor reveal quit the app.
 
 The SHA-256 check verifies bytes against metadata delivered over the configured
 HTTPS feed. It is not an Apple signature or independent proof of publisher
-identity. Never describe these packages as signed or notarized.
+identity. Record the actual signature as `unsigned` or `ad-hoc`; neither state
+establishes Developer ID signing or notarization.
 
 ## Private configuration
 
@@ -53,8 +54,9 @@ A universal artifact needs qualification on both architectures.
 The authoring script validates the hash, size, metadata, and the UDIF `koly`
 trailer. That check does not establish installability, embedded app version,
 architecture, or signing status. Inspect those properties on the Mac before
-owner review. These artifacts are explicitly unsigned; this workflow makes no
-Apple signing or notarization claim and provides no Gatekeeper bypass. If macOS
+owner review. This workflow accepts unsigned and ad-hoc signed artifacts,
+including the default internally signed build. It makes no Developer ID or
+notarization claim and provides no Gatekeeper bypass. If macOS
 blocks an artifact, use the organization's approved installation process or
 obtain an appropriately signed distribution.
 
@@ -85,14 +87,18 @@ because screenshot artifacts are not included in the approval binding.
       "sha256": "REPLACE_WITH_64_LOWERCASE_HEX_DIGITS",
       "size": 123456,
       "arch": "arm64",
-      "signing": "unsigned"
+      "signing": "ad-hoc"
     }
   }]
 }
 ```
 
 Replace the checksum and size with the final DMG's values; `arch` is `arm64`,
-`x64`, or `universal`. All DMG URLs must be HTTPS beneath the configured feed's
+`x64`, or `universal`. Set `signing` to `ad-hoc` for the default internal build
+or `unsigned` only for a genuinely unsigned artifact. The declared value is
+preserved in the reviewed metadata; the authoring script does not inspect a
+code signature. Other signing states remain unsupported by this workflow.
+All DMG URLs must be HTTPS beneath the configured feed's
 `releases/<version>/` path. The target URL's safe basename determines the staged
 filename, allowing an explicitly reviewed rename of the local build artifact.
 
@@ -100,7 +106,7 @@ filename, allowing an explicitly reviewed rename of the local build artifact.
 node scripts/mac-release-authoring.cjs review <draft.json> <feed-url> <arm64|x64|universal> <build.dmg> <private-review.json>
 ```
 
-Present the short benefits, detailed changes, unsigned/manual installation
+Present the short benefits, detailed changes, actual signing status and manual installation
 policy, architecture, destination and artifact to the owner. Review binds the
 exact metadata bytes (including historical notes), DMG SHA-256 and size, feed,
 architecture, target filename and current notes. It does not grant approval.

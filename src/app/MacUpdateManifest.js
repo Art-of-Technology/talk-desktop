@@ -2,7 +2,7 @@
 const { validateManifest, feedBase } = require('./ReleaseManifest.js')
 
 /**
- * Validate an unsigned, manually installed Mac release independently of Windows.
+ * Validate an unsigned or ad-hoc signed, manually installed Mac release independently of Windows.
  *
  * @param {object} input Untrusted metadata
  * @param {string} feed Configured HTTPS feed
@@ -20,7 +20,7 @@ function validateMacManifest(input, feed, arch) {
 			throw new Error('Mandatory Mac manual updates are not supported')
 		}
 		const artifact = input.releases.find((item) => item.version === release.version).macDownload
-		if (!artifact || ![arch, 'universal'].includes(artifact.arch) || artifact.signing !== 'unsigned'
+		if (!artifact || ![arch, 'universal'].includes(artifact.arch) || !['unsigned', 'ad-hoc'].includes(artifact.signing)
 			|| !/^[a-f0-9]{64}$/.test(artifact.sha256) || !Number.isSafeInteger(artifact.size)
 			|| artifact.size < 512 || artifact.size > 2 * 1024 * 1024 * 1024) {
 			throw new Error('Invalid Mac artifact')
@@ -31,7 +31,7 @@ function validateMacManifest(input, feed, arch) {
 			|| !url.pathname.startsWith(prefix) || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,180}\.dmg$/.test(url.pathname.slice(prefix.length))) {
 			throw new Error('Mac artifact must use its immutable feed version path')
 		}
-		return { ...release, macDownload: { url: url.href, sha256: artifact.sha256, size: artifact.size, arch: artifact.arch, signing: 'unsigned' } }
+		return { ...release, macDownload: { url: url.href, sha256: artifact.sha256, size: artifact.size, arch: artifact.arch, signing: artifact.signing } }
 	})
 	return manifest
 }

@@ -245,7 +245,7 @@ defineExpose({ open, openNotes })
 				{{ t('talk_desktop', 'Checking for updates…') }}
 			</p>
 			<p v-else-if="state.manualInstall" class="update-hint">
-				{{ t('talk_desktop', 'Choose Download update to save and verify the Mac installer. This unsigned app requires manual installation; instructions will appear when the download finishes.') }}
+				{{ t('talk_desktop', 'Choose Download update to save and verify the Mac installer. This app requires manual installation; instructions will appear when the download finishes.') }}
 			</p>
 			<p v-else class="update-hint">
 				{{ t('talk_desktop', 'Choose Update now to download. We will ask you before restarting. Windows may then ask for permission to install.') }}

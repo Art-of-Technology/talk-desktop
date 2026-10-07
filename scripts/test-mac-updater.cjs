@@ -7,6 +7,19 @@ const feed = 'https://updates.example/macos/arm64/stable/'
 const release = (version = '2.3.8') => ({ version, title: 'Mac update', summary: ['Improved notifications'], sections: [{ heading: 'Changes', body: 'New capability', images: [] }], mandatory: false, macDownload: { url: `${feed}releases/${version}/Talk.dmg`, size: 1024, sha256: 'a'.repeat(64), arch: 'arm64', signing: 'unsigned' } })
 const manifest = (item = release()) => ({ schemaVersion: 1, latestVersion: item.version, releases: [item] })
 
+test('Mac preserves unsigned and ad-hoc declarations and rejects unsupported signing states', () => {
+	for (const signing of ['unsigned', 'ad-hoc']) {
+		const item = release()
+		item.macDownload.signing = signing
+		assert.equal(validateMacManifest(manifest(item), feed, 'arm64').releases[0].macDownload.signing, signing)
+	}
+	for (const signing of [undefined, '', 'signed', 'developer-id', 'notarized', 'adhoc']) {
+		const item = release()
+		item.macDownload.signing = signing
+		assert.throws(() => validateMacManifest(manifest(item), feed, 'arm64'), /Invalid Mac artifact/)
+	}
+})
+
 test('Mac requires an explicit architecture feed and never inherits Windows', () => {
 	const config = { updateFeedUrl: 'https://updates.example/windows/', macUpdateFeedUrls: { arm64: feed } }
 	assert.equal(resolveUpdateFeed(config, 'darwin', 'arm64'), feed)

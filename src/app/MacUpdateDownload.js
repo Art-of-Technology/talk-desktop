@@ -6,7 +6,7 @@ const path = require('node:path')
 const MAX_BYTES = 2 * 1024 * 1024 * 1024
 const MAX_TIMEOUT = 15 * 60 * 1000
 
-/** Downloads unsigned macOS installers without opening or executing them. */
+/** Downloads manually installed macOS installers without opening or executing them. */
 class MacUpdateDownload {
 	constructor({ fetch, downloadsPath, timeout = MAX_TIMEOUT }) {
 		if (typeof fetch !== 'function' || !path.isAbsolute(downloadsPath)
@@ -34,7 +34,7 @@ class MacUpdateDownload {
 		}
 		if (!Number.isSafeInteger(artifact.size) || artifact.size < 1 || artifact.size > MAX_BYTES
 			|| !/^[a-fA-F0-9]{64}$/.test(artifact.sha256)
-			|| !['arm64', 'x64', 'universal'].includes(artifact.arch) || artifact.signing !== 'unsigned'
+			|| !['arm64', 'x64', 'universal'].includes(artifact.arch) || !['unsigned', 'ad-hoc'].includes(artifact.signing)
 			|| typeof version !== 'string' || !version || this.disposed) {
 			throw new Error('Invalid macOS download request')
 		}
