@@ -158,7 +158,9 @@ test('actual normal and missed-call notification callbacks never route a promote
 test('actual mounted chat receiver pushes the forwarded route as data', () => {
 	let receive
 	const routes = []
+	const callWindowState = { isCallWindow: false }
 	const context = vm.createContext({
+		callWindowState,
 		window: {
 			TALK_DESKTOP: { onNotificationConversation: (callback) => { receive = callback } },
 			OCA: { Talk: { instance: { $router: { push: async (route) => routes.push(route) } } } },
@@ -170,5 +172,8 @@ test('actual mounted chat receiver pushes the forwarded route as data', () => {
 	vm.runInContext('registerNotificationNavigation()', context)
 	const route = '/call/room?messageId=8#message_8'
 	receive(route)
+	assert.deepEqual(routes, [route])
+	callWindowState.isCallWindow = true
+	receive('/call/stale')
 	assert.deepEqual(routes, [route])
 })
