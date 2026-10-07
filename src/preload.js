@@ -261,6 +261,8 @@ const TALK_DESKTOP = {
 	checkDesktopUpdate: () => ipcRenderer.invoke('desktop-update:check'),
 	/** Consent to download the offered, validated release. */
 	downloadDesktopUpdate: () => ipcRenderer.invoke('desktop-update:download'),
+	/** Reveal only the main process's verified Mac installer; accepts no path. */
+	revealDesktopUpdate: () => ipcRenderer.invoke('desktop-update:reveal'),
 	/**
 	 * Explicitly acknowledge the installed version's release notes.
 	 *

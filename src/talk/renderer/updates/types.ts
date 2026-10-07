@@ -7,6 +7,7 @@ export interface DesktopRelease {
 }
 
 export interface DesktopUpdateState {
+	manualInstall?: boolean
 	status: string
 	version?: string
 	message?: string

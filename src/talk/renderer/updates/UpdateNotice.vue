@@ -38,7 +38,7 @@ const countdown = computed(() => `${Math.floor(remaining.value / 60)}:${String(r
 const title = computed(() => props.state.mandatory
 	? t('talk_desktop', 'Required update')
 	: props.state.status === 'ready'
-		? t('talk_desktop', 'Ready to update')
+		? (props.state.manualInstall ? t('talk_desktop', 'Install your downloaded update') : t('talk_desktop', 'Ready to update'))
 		: t('talk_desktop', 'A new version is available'))
 
 watch([() => props.state, inCall, isMainWindow], () => {
@@ -141,7 +141,7 @@ async function download() {
 
 /** Main independently validates required policy and active calls before restarting. */
 async function restart() {
-	if (restarting.value || (inCall.value && !props.state.mandatory) || props.state.status !== 'ready') {
+	if (props.state.manualInstall || restarting.value || (inCall.value && !props.state.mandatory) || props.state.status !== 'ready') {
 		return
 	}
 	restarting.value = true
@@ -154,6 +154,18 @@ async function restart() {
 	} catch {
 		restarting.value = false
 		feedback.value = t('talk_desktop', 'Could not restart. Please try again.')
+	}
+}
+
+/** Main owns the verified file path; the renderer cannot open arbitrary files. */
+async function revealInstaller() {
+	feedback.value = ''
+	try {
+		if (!await window.TALK_DESKTOP.revealDesktopUpdate()) {
+			feedback.value = t('talk_desktop', 'Could not locate the installer. Please download it again.')
+		}
+	} catch {
+		feedback.value = t('talk_desktop', 'Could not show the installer in Finder. Please try again.')
 	}
 }
 
@@ -203,7 +215,18 @@ defineExpose({ open, openNotes })
 				</p>
 				<p>{{ t('talk_desktop', 'Closing or restarting the app ends any active call and screen sharing. Closing this window does not postpone the deadline.') }}</p>
 			</div>
-			<template v-if="state.status === 'ready'">
+			<template v-if="state.status === 'ready' && state.manualInstall">
+				<p>{{ t('talk_desktop', 'The download has been verified. This Mac app is not signed by an identified Apple developer and must be installed manually.') }}</p>
+				<ol>
+					<li>{{ t('talk_desktop', 'Choose Show in Finder to locate the downloaded disk image.') }}</li>
+					<li>{{ t('talk_desktop', 'Finish any calls, then fully quit this app.') }}</li>
+					<li>{{ t('talk_desktop', 'Open the disk image, drag the new app into Applications, and choose Replace when asked.') }}</li>
+					<li>{{ t('talk_desktop', 'Open the app from Applications, then eject the disk image. Your existing account and settings stay in place.') }}</li>
+				</ol>
+				<p>{{ t('talk_desktop', 'If macOS blocks an unidentified developer, only proceed if you trust this release. Open System Settings → Privacy & Security and review the Open Anyway option after the blocked launch. If your organisation prevents this, contact your administrator.') }}</p>
+				<p>{{ t('talk_desktop', 'The app will not close or replace itself automatically. You can return to these instructions from the update menu.') }}</p>
+			</template>
+			<template v-else-if="state.status === 'ready'">
 				<p>{{ t('talk_desktop', 'Your update is downloaded. Restart to install it and reopen the app. Your account and settings will be kept.') }}</p>
 				<p v-if="inCall && !state.mandatory">
 					{{ t('talk_desktop', 'Finish your call before restarting.') }}
@@ -220,6 +243,9 @@ defineExpose({ open, openNotes })
 			</p>
 			<p v-else-if="state.status === 'checking'">
 				{{ t('talk_desktop', 'Checking for updates…') }}
+			</p>
+			<p v-else-if="state.manualInstall" class="update-hint">
+				{{ t('talk_desktop', 'Choose Download update to save and verify the Mac installer. This unsigned app requires manual installation; instructions will appear when the download finishes.') }}
 			</p>
 			<p v-else class="update-hint">
 				{{ t('talk_desktop', 'Choose Update now to download. We will ask you before restarting. Windows may then ask for permission to install.') }}
@@ -243,7 +269,12 @@ defineExpose({ open, openNotes })
 				:disabled="restarting"
 				@click="dismiss" />
 			<NcDialogButton
-				v-if="state.status === 'ready'"
+				v-if="state.status === 'ready' && state.manualInstall"
+				variant="primary"
+				:label="t('talk_desktop', 'Show in Finder')"
+				@click="revealInstaller" />
+			<NcDialogButton
+				v-else-if="state.status === 'ready'"
 				variant="primary"
 				:label="t('talk_desktop', 'Restart to update')"
 				:disabled="restarting || (inCall && !state.mandatory)"
@@ -251,7 +282,7 @@ defineExpose({ open, openNotes })
 			<NcDialogButton
 				v-else-if="state.release && state.status !== 'downloading'"
 				variant="primary"
-				:label="t('talk_desktop', 'Update now')"
+				:label="state.manualInstall ? t('talk_desktop', 'Download update') : t('talk_desktop', 'Update now')"
 				:disabled="downloading || state.status === 'checking'"
 				@click="download" />
 			<NcDialogButton v-else-if="state.status === 'error'" :label="t('talk_desktop', 'Retry update check')" @click="emit('retry')" />

@@ -21,7 +21,7 @@ class UpdateNotification {
 				body: state.mandatory
 					? 'A required update is available. Open the app to review the deadline and update.'
 					: state.status === 'ready'
-						? 'An update is ready. Open the app to restart and install it.'
+						? (state.manualInstall ? 'Your update is downloaded. Open the app for Mac installation instructions.' : 'An update is ready. Open the app to restart and install it.')
 						: 'A new version is available. Open the app to see what changed and choose whether to update.',
 				silent: true,
 			})
