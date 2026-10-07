@@ -1,8 +1,9 @@
-const { parse, compileScript } = require('@vue/compiler-sfc')
 /**
  * SPDX-FileCopyrightText: 2026 Desktop client contributors
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
+
+const { parse, compileScript } = require('@vue/compiler-sfc')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')

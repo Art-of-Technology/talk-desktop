@@ -61,6 +61,7 @@ async function requestDesktopCapturerSources() {
 	try {
 		availableSources = await window.TALK_DESKTOP.getDesktopCapturerSources() as ScreensharingSource[] | null
 	} catch {
+		console.warn('Screen-sharing source enumeration failed')
 		availableSources = null
 	}
 	if (request !== sourceRequest) {
