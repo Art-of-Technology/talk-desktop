@@ -25,7 +25,7 @@ const version = __VERSION_TAG__
 // Pre-fill server url with the last used one or set in the config
 const prefilledServer = parseAccountId(getAppConfigValue('accounts')?.[0])?.serverUrl
 
-const rawServerUrl = ref(BUILD_CONFIG.domain ?? prefilledServer)
+const rawServerUrl = ref(BUILD_CONFIG.domain ?? prefilledServer ?? '')
 const enforceDomain = Boolean(BUILD_CONFIG.domain && BUILD_CONFIG.enforceDomain)
 
 const allowReset = computed(() => !!(rawServerUrl.value && !enforceDomain))
@@ -34,7 +34,7 @@ const serverUrl = computed(() => {
 	const addHTTPS = (url) => url.startsWith('http') ? url : `https://${url}`
 	const removeIndexPhp = (url) => url.includes('/index.php') ? url.slice(0, url.indexOf('/index.php')) : url
 	const removeTrailingSlash = (url) => url.endsWith('/') ? url.slice(0, -1) : url
-	return removeTrailingSlash(removeIndexPhp(addHTTPS(rawServerUrl.value))).trim()
+	return removeTrailingSlash(removeIndexPhp(addHTTPS(rawServerUrl.value.trim())))
 })
 
 /** @type {import('vue').Ref<'idle'|'loading'|'error'|'success'>} */
@@ -80,8 +80,6 @@ function reset() {
 	rawServerUrl.value = ''
 	state.value = 'idle'
 	stateText.value = ''
-	prefilledServer = ''
-	prefilledUser = ''
 	setAppConfigValue('accounts', [])
 }
 
