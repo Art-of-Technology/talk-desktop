@@ -87,8 +87,8 @@ async function prepareRelease() {
 	argv.windows && await spinner('Package Windows', () => $`npm run build:windows && npm run package:windows`)
 	argv.linux && await spinner('Package Linux', () => $`npm run build:linux && npm run package:linux`)
 	argv.mac && await spinner('Package MacOS', () => $`npm run build:mac && npm run package:mac`)
-	argv['mac-x64'] && await spinner('Package MacOS x64', () => $`npm run build:mac-x64 && npm run package:mac-x64`)
-	argv['mac-arm64'] && await spinner('Package MacOS arm64', () => $`npm run build:mac-arm64 && npm run package:mac-arm64`)
+	argv['mac-x64'] && await spinner('Package MacOS x64', () => $`npm run build:mac:x64 && npm run package:mac:x64`)
+	argv['mac-arm64'] && await spinner('Package MacOS arm64', () => $`npm run build:mac:arm64 && npm run package:mac:arm64`)
 
 	// Done
 	echo`Done. See output in ./out/make/`
