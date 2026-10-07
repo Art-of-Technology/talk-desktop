@@ -42,8 +42,11 @@ test('recreated chat cannot reserve the live promoted window primary name', () =
 test('macOS dock activation restores minimized chat and respects shutdown guard', () => {
 	const source = fs.readFileSync(path.join(__dirname, '../src/bootstrap.js'), 'utf8')
 	const start = source.indexOf('\tfunction focusMainWindow()')
+	assert.notEqual(start, -1, 'Main-window focus callback must exist')
 	const end = source.indexOf('\n\t}', start) + 3
-	const registration = source.match(/app\.on\('activate', focusMainWindow\)/)[0]
+	assert.ok(end > start, 'Main-window focus callback must have a closing brace')
+	const registration = source.match(/app\.on\('activate', focusMainWindow\)/)
+	assert.ok(registration, 'Dock activation must use the shared focus callback')
 	let activate
 	const window = new Window({})
 	window.minimized = true
@@ -54,7 +57,7 @@ test('macOS dock activation restores minimized chat and respects shutdown guard'
 		onReadyToShow: (_, callback) => callback(),
 		app: { on: (_, callback) => { activate = callback } },
 	})
-	vm.runInContext(source.slice(start, end) + '\n' + registration, context)
+	vm.runInContext(source.slice(start, end) + '\n' + registration[0], context)
 	activate()
 	assert.equal(window.minimized, false)
 	assert.equal(window.shown, true)
