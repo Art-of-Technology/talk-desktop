@@ -26,6 +26,9 @@ const emit = defineEmits<{
 const livePreview = ref(false)
 const selectedSourceId = ref<ScreensharingSourceId | null>(null)
 const sources = ref<ScreensharingSource[] | null>(null)
+let sourceRequest = 0
+const refreshing = ref(false)
+const canShare = computed(() => !refreshing.value && sources.value?.some((source) => source.id === selectedSourceId.value))
 
 const screenSources = computed(() => sources.value?.filter((source) => source.id.startsWith('screen:') || source.id.startsWith('entire-desktop:')))
 const windowSources = computed(() => sources.value?.filter((source) => source.id.startsWith('window:')))
@@ -52,10 +55,24 @@ requestDesktopCapturerSources()
  * Request the desktop capturer sources
  */
 async function requestDesktopCapturerSources() {
-	sources.value = await window.TALK_DESKTOP.getDesktopCapturerSources() as ScreensharingSource[] | null
+	const request = ++sourceRequest
+	refreshing.value = true
+	let availableSources: ScreensharingSource[] | null
+	try {
+		availableSources = await window.TALK_DESKTOP.getDesktopCapturerSources() as ScreensharingSource[] | null
+	} catch {
+		console.warn('Screen-sharing source enumeration failed')
+		availableSources = null
+	}
+	if (request !== sourceRequest) {
+		return
+	}
+	refreshing.value = false
+	sources.value = availableSources
 
 	// There is no source. Probably the user hasn't granted the permission.
 	if (!sources.value) {
+		selectedSourceId.value = null
 		emit('cancel')
 		return
 	}
@@ -86,8 +103,8 @@ async function requestDesktopCapturerSources() {
 	// TODO: use the system picker on macOS Sonoma and later
 	sources.value = window.systemInfo.isWayland || window.systemInfo.isMac ? [...screens, ...windows] : [...screens, entireDesktop, ...windows]
 
-	// Preselect the first media source if any
-	if (!selectedSourceId.value) {
+	// Keep selection only while its source is still available.
+	if (!sources.value.some((source) => source.id === selectedSourceId.value)) {
 		selectedSourceId.value = sources.value?.[0]?.id ?? null
 	}
 }
@@ -98,7 +115,7 @@ async function requestDesktopCapturerSources() {
  * @param source - The source that was suspended
  */
 function handleVideoSuspend(source: ScreensharingSource) {
-	sources.value!.splice(sources.value!.indexOf(source), 1)
+	sources.value = sources.value?.filter((available) => available.id !== source.id) ?? null
 	if (selectedSourceId.value === source.id) {
 		selectedSourceId.value = null
 	}
@@ -108,7 +125,9 @@ function handleVideoSuspend(source: ScreensharingSource) {
  * Handle the submit event of the dialog
  */
 function handleSubmit() {
-	emit('submit', selectedSourceId.value!)
+	if (canShare.value && selectedSourceId.value) {
+		emit('submit', selectedSourceId.value)
+	}
 }
 
 /**
@@ -169,7 +188,7 @@ function handleCancel() {
 				:icon="IconMonitorShare"
 				:label="t('talk_desktop', 'Share screen')"
 				variant="primary"
-				:disabled="!selectedSourceId"
+				:disabled="!canShare"
 				@click="handleSubmit" />
 		</template>
 	</NcDialog>

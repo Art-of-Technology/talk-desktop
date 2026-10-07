@@ -6,6 +6,7 @@
 <script setup lang="ts">
 import type { ScreensharingSourceId } from './screensharing.types.ts'
 
+import { t } from '@nextcloud/l10n'
 import { onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue'
 import NcLoadingIcon from '@nextcloud/vue/components/NcLoadingIcon'
 
@@ -20,6 +21,8 @@ const emit = defineEmits<{
 const videoElement = useTemplateRef('videoElement')
 let stream: MediaStream | null = null
 const isReady = ref(false)
+const hasError = ref(false)
+let disposed = false
 
 /**
  * Get the stream for the media source
@@ -66,13 +69,19 @@ function getStreamForMediaSource(mediaSourceId: ScreensharingSourceId) {
  * Set the video source to the selected source
  */
 async function setVideoSource() {
-	stream = await getStreamForMediaSource(props.mediaSourceId)
-	if (videoElement.value) {
-		videoElement.value.srcObject = stream
-	} else {
-		// If there is no video element - something went wrong or the component is destroyed already
-		// We still must release the stream
+	try {
+		stream = await getStreamForMediaSource(props.mediaSourceId)
+		if (!disposed && videoElement.value) {
+			videoElement.value.srcObject = stream
+		} else {
+			// A permission response can arrive after the preview has been removed.
+			releaseVideoSource()
+		}
+	} catch {
 		releaseVideoSource()
+		if (!disposed) {
+			hasError.value = true
+		}
 	}
 }
 
@@ -86,6 +95,7 @@ function releaseVideoSource() {
 	for (const track of stream.getTracks()) {
 		track.stop()
 	}
+	stream = null
 }
 
 onMounted(async () => {
@@ -93,6 +103,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+	disposed = true
 	releaseVideoSource()
 })
 
@@ -101,9 +112,18 @@ onBeforeUnmount(() => {
  *
  * @param event - The event
  */
-function onLoadedMetadata(event: Event) {
-	isReady.value = true
-	;(event.target as HTMLVideoElement).play()
+async function onLoadedMetadata(event: Event) {
+	try {
+		await (event.target as HTMLVideoElement).play()
+		if (!disposed) {
+			isReady.value = true
+		}
+	} catch {
+		releaseVideoSource()
+		if (!disposed) {
+			hasError.value = true
+		}
+	}
 }
 
 /**
@@ -111,7 +131,7 @@ function onLoadedMetadata(event: Event) {
  * This is supposed to happen only if the source disappears, e.g., the source window is closed
  */
 function onSuspend() {
-	if (videoElement.value!.srcObject) {
+	if (videoElement.value?.srcObject) {
 		emit('suspend')
 	}
 }
@@ -120,13 +140,16 @@ function onSuspend() {
 <template>
 	<div class="live-preview">
 		<video
-			v-show="isReady"
+			v-show="isReady && !hasError"
 			ref="videoElement"
 			class="live-preview__video"
 			muted
 			@loadedmetadata="onLoadedMetadata"
 			@suspend="onSuspend" />
-		<span v-if="!isReady" class="live-preview__placeholder">
+		<span v-if="hasError" class="live-preview__placeholder live-preview__error" role="status">
+			{{ t('talk_desktop', 'Preview unavailable. Turn Live preview off and on to retry.') }}
+		</span>
+		<span v-else-if="!isReady" class="live-preview__placeholder">
 			<NcLoadingIcon :size="40" />
 		</span>
 	</div>
@@ -150,5 +173,10 @@ function onSuspend() {
 	place-content: center;
 	width: 100%;
 	height: 100%;
+}
+.live-preview__error {
+	box-sizing: border-box;
+	padding: calc(2 * var(--default-grid-baseline));
+	text-align: center;
 }
 </style>
