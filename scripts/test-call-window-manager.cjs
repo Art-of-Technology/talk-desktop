@@ -224,10 +224,11 @@ test('late timeout confirmation and renderer crash cannot release a new owner', 
 	assert.equal(next.isDestroyed(), true)
 })
 
-test('pending cancellation destroys only the owned generation and preserves replacement chat', async () => {
+test('pending cancellation destroys only the owned generation and preserves replacement chat', async (t) => {
+	t.mock.timers.enable({ apis: ['setTimeout'] })
 	for (const nativeClose of [false, true]) {
 		let timeouts = 0
-		const { manager, original, getMain } = setup({ leaveTimeout: 1, onLeaveTimeout: () => {
+		const { manager, original, getMain } = setup({ leaveTimeout: 1000, onLeaveTimeout: () => {
 			timeouts++
 			return false
 		} })
@@ -245,16 +246,18 @@ test('pending cancellation destroys only the owned generation and preserves repl
 		assert.equal(getMain().isDestroyed(), false)
 		assert.equal(await quitting, true)
 		assert.equal(manager.owner, null)
-		await new Promise((resolve) => setTimeout(resolve, 5))
+		t.mock.timers.tick(2000)
+		await Promise.resolve()
 		assert.equal(timeouts, 0)
 		manager.claim(getMain().webContents, 'next-room')
 		assert.equal(manager.cancelPending(original.webContents, generation), false)
 	}
 })
 
-test('active calls cannot use pending cancellation and local leave failure clears server timer', async () => {
+test('active calls cannot use pending cancellation and local leave failure clears server timer', async (t) => {
+	t.mock.timers.enable({ apis: ['setTimeout'] })
 	let timeouts = 0
-	const { manager, original, getMain } = setup({ leaveTimeout: 1, onLeaveTimeout: () => {
+	const { manager, original, getMain } = setup({ leaveTimeout: 1000, onLeaveTimeout: () => {
 		timeouts++
 		return false
 	} })
@@ -267,7 +270,8 @@ test('active calls cannot use pending cancellation and local leave failure clear
 	assert.equal(manager.leaveFailed(getMain().webContents), false)
 	assert.equal(manager.leaveFailed(original.webContents), true)
 	assert.equal(await leaving, false)
-	await new Promise((resolve) => setTimeout(resolve, 5))
+	t.mock.timers.tick(2000)
+	await Promise.resolve()
 	assert.equal(timeouts, 0)
 	assert.equal(original.isDestroyed(), false)
 })
