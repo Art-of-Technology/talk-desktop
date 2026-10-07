@@ -34,7 +34,9 @@ test('update-only deployment preserves existing identity and unbranded menus', (
 		for (const key of ['isBranded', 'companyName', 'copyright', 'applicationName', 'appleAppBundleId', 'winAppId', 'winUpgradeCode']) {
 			assert.equal(updated[key], original[key], key)
 		}
-		for (const key of Object.keys(profile)) { assert.equal(JSON.stringify(updated[key]), JSON.stringify(profile[key])) }
+		for (const key of Object.keys(profile)) {
+			assert.equal(JSON.stringify(updated[key]), JSON.stringify(profile[key]))
+		}
 	}
 })
 
