@@ -38,7 +38,8 @@ Set `macUpdateFeedUrls` in the selected ignored `.overrides/build.config.json`:
 ```
 
 The application chooses the feed using `process.arch` (`arm64` or `x64`). A
-universal DMG feed may be assigned to both keys. Preserve identifiers across
+universal DMG feed may be assigned to both keys. A profile containing only update
+feed settings preserves the default branding and menus. Preserve identifiers across
 upgrades and keep deployment identities, domains, branded notes, build outputs,
 and approval artifacts in ignored/private storage. The example domain above is
 only a placeholder.
