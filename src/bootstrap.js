@@ -88,8 +88,9 @@ ipcMain.on('app:toggleDevTools', (event) => event.sender.toggleDevTools())
 ipcMain.handle('app:anything', () => { /* Put any code here to run it from UI */ })
 ipcMain.on('app:openChromeWebRtcInternals', () => openChromeWebRtcInternals())
 ipcMain.handle('app:getDesktopCapturerSources', async () => {
-	// macOS 10.15 Catalina or higher requires consent for screen access
-	if (isMac && systemPreferences.getMediaAccessStatus('screen') !== 'granted') {
+	// A first request must reach desktopCapturer so macOS can request consent.
+	const screenAccess = isMac ? systemPreferences.getMediaAccessStatus('screen') : 'granted'
+	if (screenAccess !== 'granted' && screenAccess !== 'not-determined') {
 		// Open System Preferences to allow screen recording
 		await shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture')
 		// We cannot detect that the user has granted access, so return no sources
