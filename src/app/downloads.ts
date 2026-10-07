@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: AGPL-3.0-or-later
  */
 
-import type { BrowserWindow } from 'electron'
+import type { BrowserWindow, Session } from 'electron'
 
 import { Notification, shell } from 'electron'
 import path from 'node:path'
@@ -57,6 +57,7 @@ export function triggerDownloadUrl(browserWindow: BrowserWindow, url: string, fi
  * Persistent set to store notification objects to prevent garbage collection
  */
 const notifications: Set<Notification> = new Set()
+const downloadSessions = new WeakSet<Session>()
 
 /**
  * Handle downloads from a browser window to:
@@ -66,7 +67,12 @@ const notifications: Set<Notification> = new Set()
  * @param browserWindow - Browser window
  */
 export function applyDownloadHandler(browserWindow: BrowserWindow) {
-	browserWindow.webContents.session.on('will-download', (event, item) => {
+	const session = browserWindow.webContents.session
+	if (downloadSessions.has(session)) {
+		return
+	}
+	downloadSessions.add(session)
+	session.on('will-download', (event, item) => {
 		const suggestedFilename = popDownloadUrlFilenameSuggestion(item.getURL())
 		if (suggestedFilename) {
 			item.setSaveDialogOptions({
