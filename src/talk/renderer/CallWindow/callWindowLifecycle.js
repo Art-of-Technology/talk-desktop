@@ -26,6 +26,7 @@ export function installCallWindowLifecycle() {
 				desktopExplicitLeave: true,
 			})
 		} catch (error) {
+			await window.TALK_DESKTOP.callLeaveFailed()
 			console.error('Could not close the call window', error)
 			showError('Could not leave the call. Please try again.')
 		} finally {

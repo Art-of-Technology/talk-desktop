@@ -229,6 +229,20 @@ const TALK_DESKTOP = {
 	 */
 	releaseCallWindow: () => ipcRenderer.invoke('call:release'),
 	/**
+	 * Dispose the connecting renderer before late media callbacks can run.
+	 *
+	 * @param {number} generation - Pending join generation to cancel
+	 */
+	cancelPendingCall: (generation) => ipcRenderer.invoke('call:cancel-pending', generation),
+	/**
+	 * Register a pending join, or finish its exact generation.
+	 *
+	 * @param {number | null} generation - Pending join generation, or null to register
+	 */
+	setCallJoining: (generation) => ipcRenderer.invoke('call:joining', generation),
+	/** Report a local leave failure without waiting for a server timeout. */
+	callLeaveFailed: () => ipcRenderer.invoke('call:leave-failed'),
+	/**
 	 * Handle an explicit request to leave through Talk's normal call action.
 	 *
 	 * @param {() => void} callback - Leave handler

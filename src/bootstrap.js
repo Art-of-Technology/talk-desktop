@@ -174,7 +174,7 @@ app.whenReady().then(async () => {
 		onLeaveTimeout: async (window) => {
 			const { response } = await dialog.showMessageBox(window, {
 				type: 'warning',
-				message: 'The server has not confirmed leaving the call.',
+				message: 'The call window has not confirmed leaving the call.',
 				detail: 'Close the call window to stop your local microphone, camera and screen sharing. Other participants may see you in the call until the server detects the disconnection.',
 				buttons: ['Keep call open', 'Close call window'],
 				defaultId: 0,
@@ -186,7 +186,9 @@ app.whenReady().then(async () => {
 			const { response } = await dialog.showMessageBox(window, {
 				type: 'question',
 				message: 'Leave the current call?',
-				detail: 'This will stop your microphone, camera and screen sharing.',
+				detail: calls.pendingJoin !== null
+					? 'This will cancel the connection and close its microphone, camera and screen sharing. If the server has already connected you, others may see you until it detects the disconnection.'
+					: 'This will stop your microphone, camera and screen sharing.',
 				buttons: ['Stay in call', 'Leave call'],
 				defaultId: 0,
 				cancelId: 0,
@@ -316,6 +318,9 @@ app.whenReady().then(async () => {
 	})
 	ipcMain.handle('call:claim', (event, token) => !logoutInProgress && !quitPending && !updateInstallPending && !desktopUpdater.getState().expired && createMainWindow === createTalkWindow && trustedCallSender(event) && calls.claim(event.sender, token))
 	ipcMain.handle('call:state', (event) => trustedCallSender(event) ? calls.state(event.sender) : { isCallWindow: false, hasCallWindow: false })
+	ipcMain.handle('call:joining', (event, generation) => trustedCallSender(event) && calls.setJoining(event.sender, generation))
+	ipcMain.handle('call:cancel-pending', (event, generation) => trustedCallSender(event) && calls.cancelPending(event.sender, generation))
+	ipcMain.handle('call:leave-failed', (event) => trustedCallSender(event) && calls.leaveFailed(event.sender))
 	ipcMain.handle('call:release', (event) => trustedCallSender(event) && calls.release(event.sender))
 	ipcMain.handle('call:focus', (event) => trustedCallSender(event) && calls.focusCall())
 	ipcMain.on('app:relaunch', async () => {

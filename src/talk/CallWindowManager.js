@@ -9,6 +9,8 @@ class CallWindowManager {
 		Object.assign(this, { getMain, setMain, createMain, releaseTray, restoreTray, showMain, confirmLeave, onPromote, onLeaveTimeout, leaveTimeout })
 		this.owner = null
 		this.pendingLeave = null
+		this.joinGeneration = 0
+		this.pendingJoin = null
 	}
 
 	state(sender) {
@@ -73,6 +75,7 @@ class CallWindowManager {
 				return
 			}
 			this.owner = null
+			this.pendingJoin = null
 			this.finishLeave(true)
 			this.broadcast()
 		})
@@ -86,12 +89,50 @@ class CallWindowManager {
 		return true
 	}
 
+	setJoining(sender, generation) {
+		if (!this.owner || this.owner.webContents !== sender) {
+			return false
+		}
+		if (generation === null) {
+			if (this.pendingJoin !== null) {
+				return false
+			}
+			this.pendingJoin = ++this.joinGeneration
+			return this.pendingJoin
+		}
+		if (generation !== this.pendingJoin) {
+			return false
+		}
+		this.pendingJoin = null
+		return true
+	}
+
+	cancelPending(sender, generation) {
+		if (!this.owner || this.owner.webContents !== sender || !generation || generation !== this.pendingJoin) {
+			return false
+		}
+		// Do not defer destruction as release() does: this renderer may still
+		// have permission/media callbacks that would join after cancellation.
+		this.owner.destroy()
+		this.showMain()
+		return true
+	}
+
+	leaveFailed(sender) {
+		if (!this.owner || this.owner.webContents !== sender) {
+			return false
+		}
+		this.finishLeave(false)
+		return true
+	}
+
 	release(sender) {
 		if (!this.owner || this.owner.webContents !== sender) {
 			return false
 		}
 		const owner = this.owner
 		this.owner = null
+		this.pendingJoin = null
 		this.finishLeave(true)
 		this.broadcast()
 		this.showMain()
