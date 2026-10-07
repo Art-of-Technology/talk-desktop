@@ -96,6 +96,9 @@ export type BuildConfigFile = {
 	 */
 	updateFeedUrl: string | null
 
+	/** Explicit macOS metadata feeds by running architecture. No Windows fallback. */
+	macUpdateFeedUrls: Partial<Record<'arm64' | 'x64', string>>
+
 	/**
 	 * Windows one-click single-user installer via Squirrel.Windows.
 	 * Default: true

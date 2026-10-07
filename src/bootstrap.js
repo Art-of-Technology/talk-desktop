@@ -6,6 +6,7 @@
 const { app, ipcMain, desktopCapturer, systemPreferences, shell, session, dialog, autoUpdater, BrowserWindow, Notification } = require('electron')
 const { default: mri } = require('mri')
 const { spawn } = require('node:child_process')
+const { lstatSync } = require('node:fs')
 const path = require('node:path')
 const { setupMenu } = require('./app/app.menu.js')
 const { releaseTray, setupTray, cancelTrayQuit, prepareTrayQuit } = require('./app/app.tray.js')
@@ -20,6 +21,8 @@ const { openChromeWebRtcInternals } = require('./app/dev.utils.ts')
 const { triggerDownloadUrl } = require('./app/downloads.ts')
 const { setInternalNavigationTarget } = require('./app/externalLinkHandlers.ts')
 const { initLaunchAtStartupListener, shouldOpenInBackground } = require('./app/launchAtStartup.config.ts')
+const { MacUpdateDownload } = require('./app/MacUpdateDownload.js')
+const { resolveUpdateFeed } = require('./app/MacUpdateManifest.js')
 const { createMandatoryShutdown } = require('./app/MandatoryUpdateShutdown.js')
 const { runMigrations } = require('./app/migration.service.ts')
 const { isSquirrelMaintenance } = require('./app/squirrelMaintenance.js')
@@ -223,8 +226,15 @@ app.whenReady().then(async () => {
 	})
 	const desktopUpdater = new DesktopUpdater({
 		autoUpdater,
-		feedUrl: BUILD_CONFIG.updateFeedUrl,
-		supported: app.isPackaged && isWindows && isSquirrel,
+		feedUrl: resolveUpdateFeed(BUILD_CONFIG, process.platform, process.arch),
+		supported: app.isPackaged && ((isWindows && isSquirrel) || isMac),
+		arch: process.arch,
+		manualDownloader: isMac
+			? new MacUpdateDownload({
+					fetch: (url, options) => session.fromPartition('desktop-update-downloads').fetch(url, options),
+					downloadsPath: app.getPath('downloads'),
+				})
+			: undefined,
 		installedVersion: app.getVersion(),
 		// Keep account cookies and the default-session auth interceptor out of the feed.
 		fetchManifest: createManifestFetcher((url, options) => session.fromPartition('desktop-update-metadata').fetch(url, options)),
@@ -262,6 +272,25 @@ app.whenReady().then(async () => {
 	ipcMain.handle('desktop-update:state', (event) => trustedUpdateSender(event) ? desktopUpdater.getState() : { status: 'disabled' })
 	ipcMain.handle('desktop-update:check', (event) => trustedUpdateSender(event) ? desktopUpdater.check() : { status: 'disabled' })
 	ipcMain.handle('desktop-update:download', (event) => trustedUpdateSender(event) && !mandatoryClosing ? desktopUpdater.download() : { status: 'disabled' })
+	ipcMain.handle('desktop-update:reveal', (event) => {
+		if (!trustedUpdateSender(event)) {
+			return false
+		}
+		const file = desktopUpdater.getManualDownload()
+		if (!file) {
+			return false
+		}
+		try {
+			if (!lstatSync(file).isFile()) {
+				throw new Error('Missing installer')
+			}
+		} catch {
+			desktopUpdater.missingManualDownload()
+			return false
+		}
+		shell.showItemInFolder(file)
+		return true
+	})
 	ipcMain.handle('desktop-update:acknowledge-notes', (event, version) => trustedUpdateSender(event) && desktopUpdater.acknowledgeNotes(version))
 	ipcMain.handle('desktop-update:notice-shown', (event) => trustedUpdateSender(event) && mainWindow.isVisible() && !mainWindow.isMinimized() ? desktopUpdater.noticeShown() : desktopUpdater.getState())
 	ipcMain.handle('desktop-update:quit', async (event) => {
