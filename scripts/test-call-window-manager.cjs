@@ -223,3 +223,55 @@ test('late timeout confirmation and renderer crash cannot release a new owner', 
 	await new Promise(setImmediate)
 	assert.equal(next.isDestroyed(), true)
 })
+
+test('pending cancellation destroys only the owned generation and preserves replacement chat', async (t) => {
+	t.mock.timers.enable({ apis: ['setTimeout'] })
+	for (const nativeClose of [false, true]) {
+		let timeouts = 0
+		const { manager, original, getMain } = setup({ leaveTimeout: 1000, onLeaveTimeout: () => {
+			timeouts++
+			return false
+		} })
+		manager.claim(original.webContents, 'room')
+		const generation = manager.setJoining(original.webContents, null)
+		assert.equal(manager.cancelPending(getMain().webContents, generation), false)
+		assert.equal(manager.cancelPending(original.webContents, generation + 1), false)
+		if (nativeClose) {
+			original.emit('close', { preventDefault() {} })
+		}
+		const quitting = manager.endCall()
+		await new Promise(setImmediate)
+		assert.equal(manager.cancelPending(original.webContents, generation), true)
+		assert.equal(original.isDestroyed(), true, 'dispose synchronously, before late renderer callbacks')
+		assert.equal(getMain().isDestroyed(), false)
+		assert.equal(await quitting, true)
+		assert.equal(manager.owner, null)
+		t.mock.timers.tick(2000)
+		await Promise.resolve()
+		assert.equal(timeouts, 0)
+		manager.claim(getMain().webContents, 'next-room')
+		assert.equal(manager.cancelPending(original.webContents, generation), false)
+	}
+})
+
+test('active calls cannot use pending cancellation and local leave failure clears server timer', async (t) => {
+	t.mock.timers.enable({ apis: ['setTimeout'] })
+	let timeouts = 0
+	const { manager, original, getMain } = setup({ leaveTimeout: 1000, onLeaveTimeout: () => {
+		timeouts++
+		return false
+	} })
+	manager.claim(original.webContents, 'room')
+	const generation = manager.setJoining(original.webContents, null)
+	assert.equal(manager.setJoining(original.webContents, generation), true)
+	assert.equal(manager.cancelPending(original.webContents, generation), false)
+	const leaving = manager.endCall()
+	await new Promise(setImmediate)
+	assert.equal(manager.leaveFailed(getMain().webContents), false)
+	assert.equal(manager.leaveFailed(original.webContents), true)
+	assert.equal(await leaving, false)
+	t.mock.timers.tick(2000)
+	await Promise.resolve()
+	assert.equal(timeouts, 0)
+	assert.equal(original.isDestroyed(), false)
+})

@@ -13,32 +13,88 @@
  */
 export function createCallWindowActions(original, bridge) {
 	let joinsPending = 0
+	let canceled = false
+	let generation = null
+	let registration = null
 	return {
 		...original,
 		async joinCall(context, payload) {
-			if (!payload.participantIdentifier?.sessionId
-				|| !context.getters.findParticipant(payload.token, payload.participantIdentifier)) {
+			if (canceled) {
+				throw new Error('The call was canceled')
+			}
+			if (!payload.participantIdentifier?.sessionId) {
 				throw new Error('Cannot join a call without an active conversation session')
 			}
-			if (!await bridge.claim(payload.token)) {
-				bridge.denied()
-				// Reject, rather than resolving, so recording/dial-out continuations
-				// in useJoinCall cannot execute in the chat window.
-				throw new Error('A call is already open in another window')
+			const participant = context.getters.findParticipant(payload.token, payload.participantIdentifier)
+			if (!participant) {
+				throw new Error('Cannot join a call without an active conversation session')
 			}
 			if (joinsPending) {
 				throw new Error('A call is already connecting in this window')
 			}
 			joinsPending++
 			try {
-				return await original.joinCall(context, payload)
+				// Reserve before claim yields: native close may arrive as soon as
+				// the main process promotes this renderer into a call window.
+				registration = (async () => {
+					if (!await bridge.claim(payload.token)) {
+						bridge.denied()
+						throw new Error('A call is already open in another window')
+					}
+					return bridge.setJoining(null)
+				})()
+				generation = await registration
+				if (!generation || canceled) {
+					throw new Error('The call was canceled')
+				}
+				let confirmed = false
+				const result = await original.joinCall({
+					...context,
+					commit(type, data, ...rest) {
+						context.commit(type, data, ...rest)
+						// The pinned store swallows transport/media failures. Only its
+						// post-request participant update proves the request succeeded;
+						// setInCall can also be emitted optimistically before a failure.
+						if (type === 'updateParticipant' && data.token === payload.token
+							&& data.attendeeId === participant.attendeeId
+							&& data.updatedData?.inCall > 0) {
+							confirmed = true
+						}
+					},
+				}, payload)
+				if (canceled || !confirmed) {
+					throw new Error(canceled ? 'The call was canceled' : 'The call could not be joined')
+				}
+				return result
 			} finally {
+				const completedGeneration = generation
+				generation = null
 				joinsPending--
+				if (!canceled && completedGeneration) {
+					await bridge.setJoining(completedGeneration)
+				}
 			}
 		},
 		async leaveCall(context, payload) {
 			if (payload.desktopExplicitLeave && joinsPending) {
-				throw new Error('The call is still connecting. Please try leaving again.')
+				canceled = true
+				// Disposing the renderer is essential: upstream getUserMedia has no
+				// abort signal and may otherwise start signaling after permission.
+				// Attempt the ordinary server departure for an already connected
+				// participant (for example a reconnect/breakout join), but never
+				// let a blocked server request retain the local media renderer.
+				if (context.getters.isInCall?.(payload.token)) {
+					void Promise.resolve().then(() => original.leaveCall(context, payload)).catch(() => {})
+				}
+				try {
+					if (!await bridge.cancelPending(await registration)) {
+						throw new Error('The connecting call could not be closed')
+					}
+				} catch (error) {
+					canceled = false
+					throw error
+				}
+				return
 			}
 			// A failed join or a remote end may already have removed the attendee.
 			// Only explicit close intent plus settled store AND media evidence allows

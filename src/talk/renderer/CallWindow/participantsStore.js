@@ -12,6 +12,8 @@ export default {
 	...participantsStore,
 	actions: createCallWindowActions(participantsStore.actions, {
 		claim: (token) => window.TALK_DESKTOP.claimCallWindow(token),
+		cancelPending: (generation) => window.TALK_DESKTOP.cancelPendingCall(generation),
+		setJoining: (generation) => window.TALK_DESKTOP.setCallJoining(generation),
 		release: () => window.TALK_DESKTOP.releaseCallWindow(),
 		denied: () => showInfo('Your call is already open in a separate window.'),
 		isMediaSettled: () => !localMediaModel.get('localStream')
