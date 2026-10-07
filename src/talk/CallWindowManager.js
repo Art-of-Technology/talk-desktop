@@ -79,6 +79,17 @@ class CallWindowManager {
 			this.finishLeave(true)
 			this.broadcast()
 		})
+		owner.webContents.on('did-navigate', () => {
+			if (this.owner !== owner) {
+				return
+			}
+			// A committed main-document navigation replaces the media owner.
+			// Dispose its window too, so pending generations cannot survive it.
+			// Unlike did-start-navigation, this excludes intercepted links;
+			// did-navigate also excludes hash routing and subframes.
+			owner.destroy()
+			this.showMain()
+		})
 		owner.webContents.once('render-process-gone', () => {
 			if (this.owner === owner) {
 				this.release(owner.webContents)
