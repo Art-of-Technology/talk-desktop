@@ -275,3 +275,51 @@ test('active calls cannot use pending cancellation and local leave failure clear
 	assert.equal(timeouts, 0)
 	assert.equal(original.isDestroyed(), false)
 })
+
+test('full main-frame reload disposes pending and active owners and rejects stale generations', async () => {
+	for (const joining of [false, true]) {
+		const { manager, original, getMain } = setup()
+		manager.claim(original.webContents, 'room')
+		const generation = manager.setJoining(original.webContents, null)
+		if (!joining) {
+			manager.setJoining(original.webContents, generation)
+		}
+		const closing = manager.endCall()
+		await new Promise(setImmediate)
+		original.webContents.emit('did-navigate')
+		assert.equal(original.isDestroyed(), true)
+		assert.equal(manager.pendingJoin, null)
+		assert.equal(manager.pendingLeave, null)
+		assert.equal(await closing, true)
+		assert.equal(getMain().isDestroyed(), false)
+		const replacement = getMain()
+		assert.equal(manager.claim(replacement.webContents, 'new-room'), true)
+		const nextGeneration = manager.setJoining(replacement.webContents, null)
+		assert.ok(nextGeneration > generation)
+		assert.equal(manager.setJoining(original.webContents, generation), false)
+		assert.equal(manager.cancelPending(original.webContents, generation), false)
+		assert.equal(manager.release(original.webContents), false)
+		assert.equal(manager.leaveFailed(original.webContents), false)
+		assert.equal(manager.cancelPending(replacement.webContents, generation), false)
+		assert.equal(manager.pendingJoin, nextGeneration)
+		assert.equal(replacement.isDestroyed(), false)
+	}
+})
+
+test('same-document routes, subframes and late navigation events preserve current ownership', () => {
+	const { manager, original, getMain } = setup()
+	manager.claim(original.webContents, 'room')
+	const generation = manager.setJoining(original.webContents, null)
+	for (const event of ['did-navigate-in-page', 'did-frame-navigate', 'did-start-navigation']) {
+		original.webContents.emit(event)
+		assert.equal(manager.owner, original)
+		assert.equal(manager.pendingJoin, generation)
+		assert.equal(original.isDestroyed(), false)
+	}
+	original.webContents.emit('did-navigate')
+	const replacement = getMain()
+	manager.claim(replacement.webContents, 'next')
+	original.webContents.emit('did-navigate')
+	assert.equal(manager.owner, replacement)
+	assert.equal(replacement.isDestroyed(), false)
+})
