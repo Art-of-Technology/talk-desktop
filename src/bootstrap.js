@@ -596,18 +596,7 @@ app.whenReady().then(async () => {
 	ipcMain.handle('certificate:verify', (event, url) => verifyCertificate(mainWindow, url))
 
 	// Click on the dock icon on macOS
-	app.on('activate', () => {
-		if (mainWindow && !mainWindow.isDestroyed()) {
-			// Show the main window if it exists but hidden (not closed), e.g., minimized to the system tray
-			mainWindow.show()
-		} else {
-			// On macOS, it is common to re-create a window in the app when the
-			// dock icon is clicked and there are no other windows open.
-			// See window-all-closed event handler.
-			mainWindow = createMainWindow()
-			onReadyToShow(mainWindow, () => mainWindow.show())
-		}
-	})
+	app.on('activate', focusMainWindow)
 })
 
 app.on('window-all-closed', () => {

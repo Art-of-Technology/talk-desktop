@@ -15,12 +15,16 @@ const { TITLE_BAR_HEIGHT } = require('../constants.js')
 const { BUILD_CONFIG } = require('../shared/build.config.ts')
 const { getBrowserWindowIcon } = require('../shared/icons.utils.js')
 
+// Keep Electron's unique persisted name reserved until its window is destroyed.
+let primaryStateWindow
+
 /**
  * @param {object} [options] Window creation options
  * @param {boolean} [options.persistWindowState] Persist the initial primary window only
  * @return {import('electron').BrowserWindow}
  */
 function createTalkWindow({ persistWindowState = true } = {}) {
+	const ownsPrimaryState = persistWindowState && (!primaryStateWindow || primaryStateWindow.isDestroyed())
 	const zoomFactor = getAppConfig('zoomFactor')
 
 	const talkWindowOptions = {
@@ -55,10 +59,14 @@ function createTalkWindow({ persistWindowState = true } = {}) {
 			width: 1400,
 			height: 900,
 		}),
-		name: persistWindowState ? 'talk-primary' : undefined,
-		windowStatePersistence: persistWindowState,
+		name: ownsPrimaryState ? 'talk-primary' : undefined,
+		windowStatePersistence: ownsPrimaryState,
 		show: false,
 	})
+
+	if (ownsPrimaryState) {
+		primaryStateWindow = window
+	}
 
 	// TODO: return it on release
 	/*
