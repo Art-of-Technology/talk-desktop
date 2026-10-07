@@ -162,7 +162,10 @@ test('actual mounted chat receiver pushes the forwarded route as data', () => {
 	const context = vm.createContext({
 		callWindowState,
 		window: {
-			TALK_DESKTOP: { onNotificationConversation: (callback) => { receive = callback } },
+			TALK_DESKTOP: { onNotificationConversation: (callback) => {
+				receive = callback
+				return Promise.resolve(true)
+			} },
 			OCA: { Talk: { instance: { $router: { push: async (route) => routes.push(route) } } } },
 		},
 	})

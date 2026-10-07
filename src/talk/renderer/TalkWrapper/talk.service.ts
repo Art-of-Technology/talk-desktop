@@ -47,7 +47,7 @@ export function registerNotificationNavigation() {
 			return
 		}
 		getTalkRouter().push(route).catch(passDuplicatedNavigationError)
-	})
+	}).catch(() => console.warn('Could not register notification navigation'))
 }
 
 /**
