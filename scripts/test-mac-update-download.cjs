@@ -82,6 +82,12 @@ test('streams a verified file into a new directory on every download', async (t)
 	}
 })
 
+test('ad-hoc artifacts use the same byte verification as unsigned downloads', async (t) => {
+	const { adapter } = await fixture(t, () => response([bytes]))
+	const downloaded = await adapter.download({ ...artifact, signing: 'ad-hoc' }, '2.4.0')
+	assert.deepEqual(await fs.readFile(downloaded), bytes)
+})
+
 const failures = {
 	'hash mismatch': () => response([Buffer.alloc(bytes.length)]),
 	'truncated body': () => response([bytes.subarray(1)]),
@@ -120,7 +126,7 @@ test('rejects unsafe URLs, filenames and metadata before networking', async (t) 
 	]) {
 		await assert.rejects(adapter.download({ ...artifact, url }, '2.4.0'))
 	}
-	for (const patch of [{ size: 0 }, { size: 2 ** 31 + 1 }, { size: 1.5 }, { sha256: 'bad' }, { arch: 'invalid' }, { signing: 'signed' }]) {
+	for (const patch of [{ size: 0 }, { size: 2 ** 31 + 1 }, { size: 1.5 }, { sha256: 'bad' }, { arch: 'invalid' }, { signing: 'signed' }, { signing: 'notarized' }, { signing: 'developer-id' }, { signing: 'adhoc' }]) {
 		await assert.rejects(adapter.download({ ...artifact, ...patch }, '2.4.0'))
 	}
 	assert.deepEqual(await fs.readdir(directory), [])

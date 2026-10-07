@@ -64,6 +64,22 @@ test('stage preserves original metadata, historical notes and approved DMG bytes
 	assert.deepEqual(fs.readFileSync(path.join(output, 'release-manifest.json')), fs.readFileSync(args[0]))
 })
 
+test('ad-hoc review and staging preserve signing status alongside unsigned history', async (t) => {
+	const { dir, args, manifest, metadata, output } = fixture(t)
+	const unsigned = await review(...args)
+	manifest.releases[0].macDownload.signing = 'ad-hoc'
+	fs.writeFileSync(metadata, JSON.stringify(manifest))
+	const record = await review(...args)
+	assert.equal(record.notes.macDownload.signing, 'ad-hoc')
+	assert.notEqual(record.digest, unsigned.digest)
+	await assert.rejects(stage(...args, approve(dir, unsigned), output), /approval/)
+	await stage(...args, approve(dir, record), output)
+	const staged = JSON.parse(fs.readFileSync(path.join(output, 'release-manifest.json')))
+	assert.equal(staged.releases[0].macDownload.signing, 'ad-hoc')
+	assert.equal(staged.releases[1].macDownload.signing, 'unsigned')
+	assert.equal(JSON.parse(fs.readFileSync(path.join(output, 'approval-record.json'))).review.notes.macDownload.signing, 'ad-hoc')
+})
+
 test('missing or incomplete approval never creates a bundle', async (t) => {
 	const { dir, args, output } = fixture(t)
 	const record = await review(...args)
@@ -105,6 +121,7 @@ test('invalid metadata, mandatory updates, architecture mismatch and screenshots
 		{ mandatory: true },
 		{ sections: [] },
 		{ macDownload: { ...manifest.releases[0].macDownload, arch: 'x64' } },
+		{ macDownload: { ...manifest.releases[0].macDownload, signing: 'notarized' } },
 		{ macDownload: { ...manifest.releases[0].macDownload, url: 'https://other.example/file.dmg' } },
 		{ sections: [{ heading: 'Images', body: 'Screenshot', images: [{ url: 'https://updates.example/mac/assets/1.2.3/example.png', alt: 'Example' }] }] },
 	]) {
