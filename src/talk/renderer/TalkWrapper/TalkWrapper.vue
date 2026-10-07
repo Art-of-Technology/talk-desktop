@@ -12,7 +12,7 @@ import { callWindowState } from '../CallWindow/callWindowState.ts'
 import { registerEdisonActionCards } from '../EdisonActions/register.js'
 import { registerNotificationCards } from '../NotificationCards/register.js'
 import { registerTalkDesktopSettingsSection } from '../Settings/index.ts'
-import { onTalkHashDirty, onTalkHashUpdate, openConversation, setTalkHash } from './talk.service.ts'
+import { onTalkHashDirty, onTalkHashUpdate, openConversation, registerNotificationNavigation, setTalkHash } from './talk.service.ts'
 import { useBadgeCountIntegration } from './useBadgeCountIntegration.ts'
 
 const emit = defineEmits<{
@@ -35,6 +35,7 @@ onMounted(async () => {
 		}
 	})
 	installCallWindowLifecycle()
+	registerNotificationNavigation()
 	useBadgeCountIntegration()
 
 	// If there is a talkHash - set it initially

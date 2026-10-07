@@ -7,6 +7,7 @@ import type { Router } from 'vue-router'
 
 import { useTalkHashStore } from '@talk/src/stores/talkHash.js'
 import { isNavigationFailure, NavigationFailureType } from 'vue-router'
+import { callWindowState } from '../CallWindow/callWindowState.ts'
 
 /**
  * Get the Talk instance
@@ -37,6 +38,16 @@ export function getCurrentTalkRoutePath() {
  */
 export function openRoot() {
 	getTalkRouter().push({ name: 'root' }).catch(passDuplicatedNavigationError)
+}
+
+/** Register notification navigation after the Talk router is mounted. */
+export function registerNotificationNavigation() {
+	window.TALK_DESKTOP.onNotificationConversation((route: string) => {
+		if (callWindowState.isCallWindow) {
+			return
+		}
+		getTalkRouter().push(route).catch(passDuplicatedNavigationError)
+	}).catch(() => console.warn('Could not register notification navigation'))
 }
 
 /**

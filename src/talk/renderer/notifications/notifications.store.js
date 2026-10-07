@@ -22,7 +22,6 @@ import { getAppConfigValue } from '../../../shared/appConfig.service.ts'
 import { subscribeBroadcast } from '../../../shared/broadcast.service.ts'
 import { callWindowState } from '../CallWindow/callWindowState.ts'
 import { useAppConfigValue } from '../Settings/useAppConfigValue.ts'
-import { openConversation } from '../TalkWrapper/talk.service.ts'
 import { useUserStatusStore } from '../UserStatus/userStatus.store.ts'
 import { getNotificationsData } from './notifications.service.js'
 
@@ -202,17 +201,7 @@ export function createNotificationStore() {
 				silent: true,
 			})
 			n.addEventListener('click', () => {
-				const event = {
-					cancelAction: false,
-					notification,
-					action: {
-						url: notification.link,
-						type: 'WEB',
-					},
-				}
-				window.TALK_DESKTOP.focusTalk()
-				// Talk will open the call from notification if necessary
-				emit('notifications:action:execute', event)
+				window.TALK_DESKTOP.openNotificationConversation(notification.link)
 			}, false)
 		}
 		playSound()
@@ -441,5 +430,5 @@ subscribeBroadcast('notifications:missedCall', ({ token, name, type, avatar }) =
 		tag: Math.random().toString(36).slice(2, 6),
 		silent: true,
 	})
-	notification.addEventListener('click', () => openConversation(token))
+	notification.addEventListener('click', () => window.TALK_DESKTOP.openNotificationConversation(`${appData.serverUrl.replace(/\/$/, '')}/call/${encodeURIComponent(token)}`))
 })
