@@ -33,6 +33,10 @@ async function isDirectoryExists(path) {
  * @return {Promise<void>}
  */
 async function installVueDevtools() {
+	if (app.isPackaged) {
+		return
+	}
+
 	const extensionDir = resolve(app.getPath('userData'), 'extensions', 'vuejs-devtools')
 
 	try {
@@ -41,7 +45,7 @@ async function installVueDevtools() {
 			await fs.rm(extensionDir, { recursive: true })
 		}
 
-		await fs.mkdir(extensionDir)
+		await fs.mkdir(extensionDir, { recursive: true })
 		await unzip(vueDevtoolsPath, extensionDir)
 		await session.defaultSession.extensions.loadExtension(extensionDir)
 
