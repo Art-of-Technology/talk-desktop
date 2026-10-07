@@ -46,6 +46,8 @@ node scripts/verify-call-window-package.cjs "$APP_PATH/Contents/Resources/app.as
 plutil -p "$APP_PATH/Contents/Info.plist"
 lipo -archs "$APP_PATH/Contents/MacOS/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP_PATH/Contents/Info.plist")"
 codesign -dv --verbose=4 "$APP_PATH" 2>&1
+codesign --verify --deep --strict --all-architectures "$APP_PATH"
+codesign -d --entitlements - "$APP_PATH"
 spctl --assess --type execute --verbose=4 "$APP_PATH"
 hdiutil verify "$DMG_PATH"
 shasum -a 256 "$DMG_PATH"
@@ -56,8 +58,28 @@ architecture. Inspect embedded Electron helpers/native modules as well as the
 main binary before declaring universal compatibility. The package verifiers
 check the actual bundled message/call audio and injected call callbacks; they
 do not prove audible playback or a live call. An ad-hoc signature is not a
-Developer ID signature. Gatekeeper rejection is expected for an unsigned,
-unnotarized internal build; record that result rather than calling it signed.
+Developer ID signature. Gatekeeper rejection is expected for an ad-hoc signed,
+unnotarized internal build; record signing and notarization separately.
+
+Packaging now signs the complete bundle, including nested Electron code, even
+without Apple credentials. The default is ad-hoc signing for internal testing.
+Hardened runtime is enabled for certificate signing, not ad-hoc signing (which
+has no team identity for runtime library validation).
+Universal builds are signed after the architecture merge; signing or strict
+verification failure aborts packaging. Entitlements are applied to the code
+signature, not merged into Info.plist; specialized Electron helper entitlements
+are retained.
+
+Set `APPLE_SIGN_IDENTITY` privately to select a certificate independently of
+notarization. Providing `APPLE_ID`, `APPLE_ID_PASSWORD` and `APPLE_TEAM_ID`
+enables notarization; without an explicit identity this uses Developer ID
+discovery. Ad-hoc signing cannot be combined with notarization.
+
+A valid ad-hoc signature fixes the incomplete bundle identity but does not
+establish trusted publisher identity or permission continuity across rebuilt
+versions. Before distributing a replacement, verify microphone/camera consent
+is retained on repeated use and relaunch of the exact installed artifact, then
+test an upgrade separately. Do not reset TCC to conceal permission failures.
 
 Mount the DMG read-only, check its application and Applications shortcut, then
 quit the current client before copying to Applications. Verify that the copied
