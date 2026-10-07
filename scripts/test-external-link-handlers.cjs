@@ -12,16 +12,18 @@ const compiled = ts.transpileModule(fs.readFileSync(require.resolve('../src/app/
 	compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
 }).outputText
 
-for (const redirected of [false, true]) {
+for (const redirected of [false, true, 'closed']) {
 	for (const route of ['/call/room123?view=chat#message42', "/call/room123#';globalThis.injected=true;//"]) {
 		test(`navigation treats route as data (redirected=${redirected}, route=${route})`, async () => {
 			const handlers = {}
 			const external = []
+			const warnings = []
 			const exports = {}
 			vm.runInNewContext(compiled, {
 				exports,
 				URL,
 				process,
+				console: { warn: (message) => warnings.push(message) },
 				require(id) {
 					if (id === 'electron') {
 						return { shell: { openExternal: (url) => external.push(url) } }
@@ -51,7 +53,7 @@ for (const redirected of [false, true]) {
 			}
 			if (redirected) {
 				exports.setInternalNavigationTarget(source, () => ({
-					isDestroyed: () => false,
+					isDestroyed: () => redirected === 'closed',
 					isMinimized: () => false,
 					show() {},
 					webContents: frame,
@@ -65,11 +67,37 @@ for (const redirected of [false, true]) {
 				preventDefault() { prevented = true },
 			})
 			assert.equal(prevented, true)
-			assert.equal(executions, 1)
-			assert.equal(renderer.window.location.hash, '#' + route)
+			assert.equal(executions, redirected === 'closed' ? 0 : 1)
+			assert.equal(renderer.window.location.hash, redirected === 'closed' ? '' : '#' + route)
 			assert.equal(renderer.injected, false)
 			assert.equal(reloads, redirected ? 0 : 1)
 			assert.deepEqual(external, [])
+			assert.deepEqual(warnings, redirected === 'closed'
+				? ['Could not open the conversation because the chat window is unavailable']
+				: [])
 		})
 	}
 }
+
+test('promoted call navigation focuses or recreates chat before resolving its target', () => {
+	const bootstrap = fs.readFileSync(require.resolve('../src/bootstrap.js'), 'utf8')
+	const start = bootstrap.indexOf('onPromote: ')
+	const end = bootstrap.indexOf('\n\t\tonLeaveTimeout:', start)
+	assert.ok(start >= 0 && end > start, 'locate actual bootstrap navigation resolver')
+	const callback = bootstrap.slice(start + 'onPromote: '.length, end).trim().replace(/,$/, '')
+	const source = {}
+	const oldChat = { destroyed: true }
+	const recreatedChat = { destroyed: false }
+	let current = oldChat
+	let resolver
+	const promote = vm.runInNewContext(`(${callback})`, {
+		get mainWindow() { return current },
+		focusMainWindow() { current = recreatedChat },
+		setInternalNavigationTarget(owner, target) {
+			assert.equal(owner, source)
+			resolver = target
+		},
+	})
+	promote(source)
+	assert.equal(resolver(), recreatedChat)
+})
