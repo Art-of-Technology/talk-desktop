@@ -193,6 +193,22 @@ const TALK_DESKTOP = {
 	 */
 	focusTalk: () => ipcRenderer.invoke('talk:focus'),
 	/**
+	 * Open a notification in the current chat renderer, even after call promotion.
+	 *
+	 * @param {string} link Same-server conversation URL
+	 * @return {Promise<boolean>}
+	 */
+	openNotificationConversation: (link) => ipcRenderer.invoke('talk:notification-open', link),
+	/**
+	 * Register the mounted Talk router before releasing queued notification clicks.
+	 *
+	 * @param {(route: string) => void} callback Conversation route handler
+	 */
+	onNotificationConversation: (callback) => {
+		ipcRenderer.on('talk:notification-route', (_event, route) => callback(route))
+		return ipcRenderer.invoke('talk:notification-ready')
+	},
+	/**
 	 * Reserve this renderer as the call window without reloading its media session.
 	 *
 	 * @param {string} token - Conversation token

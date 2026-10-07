@@ -39,6 +39,13 @@ export function openRoot() {
 	getTalkRouter().push({ name: 'root' }).catch(passDuplicatedNavigationError)
 }
 
+/** Register notification navigation after the Talk router is mounted. */
+export function registerNotificationNavigation() {
+	window.TALK_DESKTOP.onNotificationConversation((route: string) => {
+		getTalkRouter().push(route).catch(passDuplicatedNavigationError)
+	})
+}
+
 /**
  * Open a conversation in Talk
  *

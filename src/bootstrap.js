@@ -38,6 +38,7 @@ const { createHelpWindow } = require('./help/help.window.js')
 const { installVueDevtools } = require('./install-vue-devtools.js')
 const { BUILD_CONFIG } = require('./shared/build.config.ts')
 const { CallWindowManager } = require('./talk/CallWindowManager.js')
+const { NotificationNavigation } = require('./talk/NotificationNavigation.js')
 const { createTalkWindow } = require('./talk/talk.window.js')
 const { createUpgradeWindow } = require('./upgrade/upgrade.window.ts')
 const { createWelcomeWindow } = require('./welcome/welcome.window.ts')
@@ -518,10 +519,21 @@ app.whenReady().then(async () => {
 	})
 
 	ipcMain.handle('talk:focus', async () => focusMainWindow())
+	const notificationNavigation = new NotificationNavigation({
+		getMain: () => mainWindow,
+		focusMain: focusMainWindow,
+		trusted: (event) => !logoutInProgress && !quitPending && !mandatoryClosing
+			&& createMainWindow === createTalkWindow && trustedCallSender(event),
+		serverUrl: () => appData.serverUrl,
+		account: () => JSON.stringify([appData.serverUrl, appData.credentials?.user]),
+	})
+	ipcMain.handle('talk:notification-open', (event, link) => notificationNavigation.open(event, link))
+	ipcMain.handle('talk:notification-ready', (event) => notificationNavigation.markReady(event))
 
 	ipcMain.handle('authentication:openLoginWebView', async (event, serverUrl, user) => openLoginWebView(mainWindow, serverUrl, user))
 
 	ipcMain.handle('authentication:login', async (event, newAppData) => {
+		notificationNavigation.clear()
 		if (!await calls.endCall()) {
 			return
 		}
@@ -537,6 +549,7 @@ app.whenReady().then(async () => {
 			return
 		}
 		logoutInProgress = true
+		notificationNavigation.clear()
 		try {
 			if (!await calls.endCall()) {
 				return
