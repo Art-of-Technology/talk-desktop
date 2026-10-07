@@ -20,10 +20,10 @@ const TALK_DESKTOP_UUID = '007a0d7d-9595-41d2-b5aa-740a5a63e38a'
 function resolveBuildConfig() {
 	const buildConfigOverridesPath = join(__dirname, '../.overrides/build.config.json')
 
-	const isBranded = existsSync(buildConfigOverridesPath)
+	const hasOverrides = existsSync(buildConfigOverridesPath)
 
 	/** @type {Partial<import('./BuildConfig.types.ts').BuildConfigFile>} */
-	const buildConfigOverrides = isBranded ? JSON.parse(readFileSync(buildConfigOverridesPath, 'utf-8')) : {}
+	const buildConfigOverrides = hasOverrides ? JSON.parse(readFileSync(buildConfigOverridesPath, 'utf-8')) : {}
 
 	// Remove all undefined values
 	// TODO: check if undefined values can be empty strings or only null
@@ -32,6 +32,9 @@ function resolveBuildConfig() {
 			delete buildConfigOverrides[key]
 		}
 	}
+
+	// Update destinations configure deployment, not application branding.
+	const isBranded = Object.keys(buildConfigOverrides).some((key) => !['macUpdateFeedUrls', 'updateFeedUrl'].includes(key))
 
 	/** @type {import('./BuildConfig.types.ts').BuildConfigFile} */
 	const buildConfig = {
