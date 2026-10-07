@@ -113,6 +113,7 @@ async function willNavigateExternalLinkHandler(event: Event<WebContentsWillNavig
 			const target = resolveTarget()
 			// A retained call renderer must never become the fallback chat router.
 			if (!target || target === source || target.isDestroyed()) {
+				console.warn('Could not open the conversation because the chat window is unavailable')
 				return
 			}
 			if (target.isMinimized()) {

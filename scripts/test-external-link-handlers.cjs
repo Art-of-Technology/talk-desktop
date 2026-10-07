@@ -17,11 +17,13 @@ for (const redirected of [false, true, 'closed']) {
 		test(`navigation treats route as data (redirected=${redirected}, route=${route})`, async () => {
 			const handlers = {}
 			const external = []
+			const warnings = []
 			const exports = {}
 			vm.runInNewContext(compiled, {
 				exports,
 				URL,
 				process,
+				console: { warn: (message) => warnings.push(message) },
 				require(id) {
 					if (id === 'electron') {
 						return { shell: { openExternal: (url) => external.push(url) } }
@@ -70,6 +72,9 @@ for (const redirected of [false, true, 'closed']) {
 			assert.equal(renderer.injected, false)
 			assert.equal(reloads, redirected ? 0 : 1)
 			assert.deepEqual(external, [])
+			assert.deepEqual(warnings, redirected === 'closed'
+				? ['Could not open the conversation because the chat window is unavailable']
+				: [])
 		})
 	}
 }
