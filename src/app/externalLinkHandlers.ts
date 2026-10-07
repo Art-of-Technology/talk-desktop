@@ -108,8 +108,13 @@ async function willNavigateExternalLinkHandler(event: Event<WebContentsWillNavig
 
 	const talkRoute = tryExtractTalkRoute(url)
 	if (talkRoute && webFrameMain) {
-		const target = internalNavigationTargets.get(source)?.()
-		if (target && target !== source && !target.isDestroyed()) {
+		const resolveTarget = internalNavigationTargets.get(source)
+		if (resolveTarget) {
+			const target = resolveTarget()
+			// A retained call renderer must never become the fallback chat router.
+			if (!target || target === source || target.isDestroyed()) {
+				return
+			}
 			if (target.isMinimized()) {
 				target.restore()
 			}

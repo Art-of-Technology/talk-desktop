@@ -172,7 +172,10 @@ app.whenReady().then(async () => {
 		releaseTray,
 		restoreTray: setupTray,
 		showMain: focusMainWindow,
-		onPromote: (owner) => setInternalNavigationTarget(owner, () => mainWindow),
+		onPromote: (owner) => setInternalNavigationTarget(owner, () => {
+			focusMainWindow()
+			return mainWindow
+		}),
 		onLeaveTimeout: async (window) => {
 			const { response } = await dialog.showMessageBox(window, {
 				type: 'warning',
