@@ -19,7 +19,7 @@ const vm = require('node:vm')
 async function installer(isPackaged, userData, loaded) {
 	const sandbox = {
 		module: { exports: {} },
-		__dirname: path.resolve('src'),
+		__dirname: path.resolve(__dirname, '../src'),
 		console: { log() {}, error(error) { throw error } },
 		require(id) {
 			if (id === 'electron') {
@@ -40,7 +40,7 @@ async function installer(isPackaged, userData, loaded) {
 			return require(id)
 		},
 	}
-	vm.runInNewContext(await fs.readFile(path.resolve('src/install-vue-devtools.js'), 'utf8'), sandbox)
+	vm.runInNewContext(await fs.readFile(path.resolve(__dirname, '../src/install-vue-devtools.js'), 'utf8'), sandbox)
 	return sandbox.module.exports.installVueDevtools
 }
 
