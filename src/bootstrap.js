@@ -20,7 +20,7 @@ const { DesktopUpdater } = require('./app/DesktopUpdater.js')
 const { openChromeWebRtcInternals } = require('./app/dev.utils.ts')
 const { triggerDownloadUrl } = require('./app/downloads.ts')
 const { setInternalNavigationTarget } = require('./app/externalLinkHandlers.ts')
-const { initLaunchAtStartupListener } = require('./app/launchAtStartup.config.ts')
+const { initLaunchAtStartupListener, shouldOpenInBackground } = require('./app/launchAtStartup.config.ts')
 const { MacUpdateDownload } = require('./app/MacUpdateDownload.js')
 const { resolveUpdateFeed } = require('./app/MacUpdateManifest.js')
 const { createMandatoryShutdown } = require('./app/MandatoryUpdateShutdown.js')
@@ -132,8 +132,7 @@ app.whenReady().then(async () => {
 	initLaunchAtStartupListener()
 	registerAppProtocolHandler()
 
-	// Open in the background if it is explicitly set, or the app was open at login on macOS
-	const openInBackground = argv.background || app.getLoginItemSettings().wasOpenedAtLogin
+	const openInBackground = shouldOpenInBackground(Boolean(argv.background))
 
 	try {
 		await installVueDevtools()

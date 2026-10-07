@@ -7,6 +7,16 @@ import { app } from 'electron'
 import { getAppConfig, onAppConfigChange } from './AppConfig.ts'
 
 /**
+ * Resolve login-item launches against the saved foreground/background preference.
+ *
+ * @param explicitBackground - Whether the command line requests a hidden launch
+ */
+export function shouldOpenInBackground(explicitBackground: boolean = false): boolean {
+	return explicitBackground || (app.getLoginItemSettings().wasOpenedAtLogin === true
+		&& getAppConfig('launchAtStartupInBackground'))
+}
+
+/**
  * Set the application to launch at startup according to the configuration
  */
 function applyLaunchAtStartup() {
